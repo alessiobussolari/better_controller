@@ -1,0 +1,87 @@
+# BetterController
+
+BetterController has been successfully installed! 
+
+## Getting Started
+
+### Configuration
+
+An initializer has been created at `config/initializers/better_controller.rb`. 
+You can modify the configuration options to suit your needs.
+
+### Generating Controllers
+
+You can generate a controller with BetterController using the following command:
+
+```bash
+rails generate better_controller:controller Users index show create update destroy
+```
+
+This will create:
+- A UsersController with the specified actions
+- A UserService for handling business logic
+- A UserSerializer for serializing responses
+
+### Customizing Controllers
+
+You can customize the generated controllers by overriding the following methods:
+
+```ruby
+# Define the resource service class
+def resource_service_class
+  UserService
+end
+
+# Define the root key for resource parameters
+def resource_params_root_key
+  :user
+end
+
+# Define the resource serializer class
+def resource_serializer
+  UserSerializer
+end
+```
+
+### Using Services
+
+Services handle the business logic for your resources. You can customize them by overriding methods:
+
+```ruby
+# Define permitted attributes
+def permitted_attributes
+  [:name, :email, :password]
+end
+
+# Add custom validation
+def validate_create(attributes)
+  raise BetterController::Error.new("Email is required") if attributes[:email].blank?
+end
+```
+
+### Using Serializers
+
+Serializers define how your resources are presented in responses:
+
+```ruby
+# Define attributes to include
+attributes :id, :name, :email, :created_at
+
+# Define methods for calculated fields
+methods :full_name
+
+# Define associations to include
+has_many :posts
+belongs_to :company
+
+# Define a method that returns a calculated field
+def full_name
+  "#{object.first_name} #{object.last_name}"
+end
+```
+
+## Documentation
+
+For more information, please refer to the BetterController documentation.
+
+Happy coding!
