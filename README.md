@@ -458,18 +458,6 @@ RSpec.describe UsersController, type: :controller do
 end
 ```
 
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/my-new-feature`)
-3. Commit your changes (`git commit -am 'Add some feature'`)
-4. Push to the branch (`git push origin feature/my-new-feature`)
-5. Create a new Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Advanced Features
 
 ### Pagination
@@ -619,6 +607,15 @@ end
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## Contact & Support 📬
+
+- **Email**: alessio.bussolari@pandev.it
+- **Issues**: [GitHub Issues](https://github.com/alessiobussolari/better_controller/issues)
+
 ## License 📄
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
+
+BetterController aims to simplify the process of building RESTful controllers in Rails applications by providing a structured, configurable, and extensible system. Whether you need to handle complex API responses, validate parameters, or implement pagination, BetterController streamlines the entire process. Contributions, feedback, and feature requests are highly encouraged to help improve the gem further.
+
+For more details, please visit the [GitHub repository](https://github.com/alessiobussolari/better_controller).
