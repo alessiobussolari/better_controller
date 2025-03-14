@@ -5,7 +5,7 @@
 
 > 🚀 A powerful Ruby gem for building standardized, maintainable, and feature-rich Rails controllers
 
-BetterController simplifies the process of building RESTful controllers in your Rails applications. It provides a structured approach to define controllers, services, and serializers, making your development process more maintainable and efficient.
+BetterController simplifies the process of building RESTful controllers in your Rails applications. It provides a structured approach to define controllers, services, and serializers, making your development process more maintainable and efficient. With standardized API responses and robust serialization, your APIs will be consistent and easy to consume.
 
 ## ✨ Key Features
 
@@ -18,12 +18,13 @@ BetterController simplifies the process of building RESTful controllers in your 
 - 🚨 **Error Handling**: Comprehensive error handling with custom error classes
 - 📝 **Logging**: Enhanced logging capabilities
 - 🧩 **Generators**: Rails generators for controllers, services, and serializers
+- 📚 **Comprehensive Documentation**: Detailed guides for API responses and serializers
 
 ## Why BetterController? 🤔
 
 - 🏗️ **Standardized Approach**: Consistent controller structure across your application
 - 🧩 **Modular Design**:
-  - Separate controller, service, and serializer components
+  - Organized into controllers, services, serializers, and utilities
   - Reusable modules
   - Configurable behavior
 - 🔄 **Flexible Implementation**:
@@ -38,6 +39,10 @@ BetterController simplifies the process of building RESTful controllers in your 
   - Consistent JSON structure
   - Pagination metadata
   - Custom response formatting
+- 📚 **Developer-Friendly**:
+  - Comprehensive documentation
+  - Predictable API behavior
+  - Clear integration examples
 
 ## Installation
 
@@ -135,10 +140,11 @@ end
 
 ### Creating a ResourcesController
 
-Create a controller that inherits from the ResourcesController:
+Create a controller that includes the ResourcesController module:
 
 ```ruby
-class UsersController < BetterController::ResourcesController
+class UsersController < ApplicationController
+  include BetterController::Controllers::ResourcesController
   # Controller-specific configuration
   def resource_class
     User
@@ -196,52 +202,82 @@ end
 
 ### Service Layer
 
-Create a service class to handle business logic:
+Create a service class that inherits from the Service base class:
 
 ```ruby
-class UserService
-  def self.create(params)
-    user = User.new(params)
-    user.save
+class UserService < BetterController::Services::Service
+  def model_class
+    User
+  end
+  
+  def permitted_attributes
+    [:name, :email, :role]
+  end
+  
+  # Override default methods as needed
+  def create(attributes)
+    # Custom creation logic
+    user = model_class.new(attributes)
+    # Additional operations...
+    user.save!
     user
   end
   
-  def self.update(user, params)
-    user.update(params)
-    user
+  def update(resource, attributes)
+    # Custom update logic
+    resource.assign_attributes(attributes)
+    # Additional operations...
+    resource.save!
+    resource
   end
   
-  def self.destroy(user)
-    user.destroy
-    user
+  def destroy(resource)
+    # Custom destroy logic
+    # Additional operations before destroy...
+    resource.destroy
+    resource
   end
 end
 ```
 
-### Serializer
+### Serialization
 
-Create a serializer to format your responses:
+Create a serializer class that includes the Serializer module:
 
 ```ruby
 class UserSerializer
-  def self.serialize(user, options = {})
-    {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      created_at: user.created_at,
-      updated_at: user.updated_at
-    }
+  include BetterController::Serializers::Serializer
+  
+  # Define attributes to include in the serialized output
+  attributes :id, :name, :email, :created_at
+  
+  # Define methods to include in the serialized output
+  methods :full_name, :role_name
+  
+  def full_name
+    "#{object.first_name} #{object.last_name}"
+  end
+  
+  def role_name
+    object.role.name if object.role
   end
 end
 ```
+
+## Documentation
+
+BetterController includes comprehensive documentation to help you understand and use the library effectively:
+
+- [API Responses](docs/api_responses.md): Detailed guide on the format of API responses
+- [Serializers](docs/serializers.md): Guide on how to use serializers effectively
+
+These documents provide in-depth information about how the system responds to requests and what client applications should expect.
 
 ## Core Features
 
 ### ResourcesController
 
-The `ResourcesController` provides a standardized implementation of RESTful actions:
+The `BetterController::Controllers::ResourcesController` module provides a standardized implementation of RESTful actions:
 
 ```ruby
 # Available actions
@@ -276,7 +312,7 @@ Example response format:
 
 ### Pagination
 
-The `Pagination` module provides pagination functionality for ActiveRecord collections:
+The `BetterController::Utils::Pagination` module provides pagination functionality for ActiveRecord collections:
 
 ```ruby
 def index
@@ -332,9 +368,6 @@ Error response format:
 }
 ```
 
-end
-```
-
 ## Advanced Customization
 
 ### Overriding Default Behavior
@@ -342,7 +375,9 @@ end
 You can override any of the default methods in your controller to customize behavior:
 
 ```ruby
-class UsersController < BetterController::ResourcesController
+class UsersController < ApplicationController
+  include BetterController::Controllers::ResourcesController
+  
   # Override the default index action
   def index
     execute_action do
@@ -374,7 +409,7 @@ end
 You can implement custom serialization logic:
 
 ```ruby
-class UserSerializer
+class UserSerializer < BetterController::Serializers::Serializer
   def self.serialize(user, options = {})
     serialized = {
       id: user.id,
@@ -400,222 +435,139 @@ class UserSerializer
 end
 ```
 
-### Custom Error Handling
+### Parameter Validation
 
-Implement custom error handling in your controllers:
+The `BetterController::Utils::ParameterValidation` module provides robust parameter validation:
 
 ```ruby
-class ApplicationController < ActionController::Base
-  include BetterController
-  
-  rescue_from ActiveRecord::RecordNotFound, with: :handle_not_found
-  rescue_from ActionController::ParameterMissing, with: :handle_parameter_missing
-  rescue_from CustomError::AuthorizationError, with: :handle_authorization_error
-  
-  private
-  
-  def handle_not_found(exception)
-    respond_with_error(exception.message, status: :not_found, options: { code: 'NOT_FOUND' })
+def create
+  execute_action do
+    validate_parameters do
+      required(:user).schema do
+        required(:name).filled(:string)
+        required(:email).filled(:string)
+        optional(:role).maybe(:string)
+      end
+    end
+    
+    resource = resource_creator
+    data = serialize_resource(resource, create_serializer)
+    respond_with_success(data, options: { message: create_message })
   end
-  
-  def handle_parameter_missing(exception)
-    respond_with_error("Required parameter missing: #{exception.param}", status: :bad_request)
-  end
-  
-  def handle_authorization_error(exception)
-    respond_with_error('You are not authorized to perform this action', status: :forbidden)
+end
+```
+
+### Transaction Handling
+
+The `with_transaction` method simplifies database transaction handling:
+
+```ruby
+def create
+  execute_action do
+    with_transaction do
+      # All database operations within this block will be wrapped in a transaction
+      user = User.create!(user_params)
+      user.profile.create!(profile_params)
+      user.settings.create!(settings_params)
+      user
+    end
   end
 end
 ```
 
 ## Testing
 
-BetterController includes RSpec tests to ensure functionality. Run the tests with:
+BetterController is designed to be easily testable. Here are some examples of how to test your controllers:
 
-```bash
-bundle exec rspec
-```
+### Controller Tests
 
 Example test for a controller:
 
 ```ruby
 RSpec.describe UsersController, type: :controller do
   describe '#index' do
-    it 'returns a collection of users' do
+    it 'returns a list of users' do
       get :index
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)['data']).to be_an(Array)
+      json = JSON.parse(response.body)
+      expect(json['data']).to be_an(Array)
+    end
+  end
+  
+  describe '#show' do
+    it 'returns a user' do
+      user = create(:user)
+      get :show, params: { id: user.id }
+      expect(response).to have_http_status(:ok)
+      json = JSON.parse(response.body)
+      expect(json['data']['id']).to eq(user.id)
+    end
+    
+    it 'returns 404 for non-existent user' do
+      get :show, params: { id: 999 }
+      expect(response).to have_http_status(:not_found)
     end
   end
   
   describe '#create' do
-    it 'creates a new user' do
-      post :create, params: { user: { name: 'John Doe', email: 'john@example.com' } }
+    it 'creates a user' do
+      user_params = { name: 'John Doe', email: 'john@example.com' }
+      post :create, params: { user: user_params }
       expect(response).to have_http_status(:created)
-      expect(JSON.parse(response.body)['message']).to eq('User created successfully')
+      json = JSON.parse(response.body)
+      expect(json['data']['name']).to eq('John Doe')
+    end
+    
+    it 'returns 422 for invalid params' do
+      post :create, params: { user: { name: '' } }
+      expect(response).to have_http_status(:unprocessable_entity)
     end
   end
 end
 ```
 
-## Advanced Features
+### Service Tests
 
-### Pagination
-
-The `Pagination` module provides pagination functionality for ActiveRecord collections:
+Example test for a service:
 
 ```ruby
-def index
-  execute_action do
-    collection = User.all
-    @users = paginate(collection, page: params[:page], per_page: 20)
-    respond_with_success(@users)
+RSpec.describe UserService do
+  describe '.create' do
+    it 'creates a user' do
+      params = { name: 'John Doe', email: 'john@example.com' }
+      user = UserService.create(params)
+      expect(user).to be_persisted
+      expect(user.name).to eq('John Doe')
+    end
+    
+    it 'returns user with errors if invalid' do
+      params = { name: '' }
+      user = UserService.create(params)
+      expect(user).not_to be_persisted
+      expect(user.errors).to be_present
+    end
   end
 end
 ```
 
-### Parameter Helpers
+## Contributing
 
-The `ParamsHelpers` module provides enhanced parameter handling:
-
-```ruby
-# Get a typed parameter
-user_id = param(:user_id, type: :integer)
-
-# Get a boolean parameter
-active = boolean_param(:active, default: true)
-
-# Get a date parameter
-start_date = date_param(:start_date)
-
-# Get a JSON parameter
-data = json_param(:data)
-```
-
-### Logging
-
-The `Logging` module provides enhanced logging capabilities:
-
-```ruby
-# Log at different levels
-log_info("Processing request")
-log_debug("Debug information")
-log_warn("Warning message")
-log_error("Error occurred")
-
-# Log with tags
-log_info("User created", { user_id: user.id, email: user.email })
-
-# Log exceptions
-begin
-  # Some code that might raise an exception
-rescue => e
-  log_exception(e, { controller: self.class.name, action: action_name })
-end
-```
-
-## Generators
-
-### Controller Generator
-
-Generate a controller with BetterController:
-
-```bash
-rails generate better_controller:controller Users index show create update destroy
-```
-
-This will create:
-- A UsersController with the specified actions
-- A UserService for handling business logic
-- A UserSerializer for serializing responses
-
-## Example Implementation
-
-### Controller
-
-```ruby
-class UsersController < ApplicationController
-  include BetterController::ResourcesController
-  
-  # GET /users
-  def index
-    execute_action do
-      @resource_collection = resource_collection_resolver
-      data = serialize_resource(@resource_collection, index_serializer)
-      respond_with_success(data, options: { meta: meta })
-    end
-  end
-  
-  # GET /users/:id
-  def show
-    execute_action do
-      @resource = resource_resolver
-      data = serialize_resource(@resource, show_serializer)
-      respond_with_success(data)
-    end
-  end
-  
-  # POST /users
-  def create
-    execute_action do
-      @resource = resource_service.create(resource_params)
-      data = serialize_resource(@resource, create_serializer)
-      respond_with_success(data, status: :created)
-    end
-  end
-  
-  # PATCH/PUT /users/:id
-  def update
-    execute_action do
-      @resource = resource_resolver
-      resource_service.update(@resource, resource_params)
-      data = serialize_resource(@resource, update_serializer)
-      respond_with_success(data)
-    end
-  end
-  
-  # DELETE /users/:id
-  def destroy
-    execute_action do
-      @resource = resource_resolver
-      resource_service.destroy(@resource)
-      respond_with_success(nil, status: :no_content)
-    end
-  end
-  
-  protected
-  
-  def resource_service_class
-    UserService
-  end
-  
-  def resource_params_root_key
-    :user
-  end
-  
-  def resource_serializer
-    UserSerializer
-  end
-end
-```
-
-## Contributing 🤝
+Contributions are welcome! Here's how you can contribute:
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit your changes: `git commit -am 'Add my feature'`
+4. Push to the branch: `git push origin feature/my-feature`
+5. Submit a pull request
 
-## Contact & Support 📬
+Please make sure your code follows the [Ruby Style Guide](https://github.com/rubocop/rubocop) and includes appropriate tests.
 
-- **Email**: alessio.bussolari@pandev.it
-- **Issues**: [GitHub Issues](https://github.com/alessiobussolari/better_controller/issues)
+## Contact and Support
 
-## License 📄
+- **GitHub**: [https://github.com/yourusername/better_controller](https://github.com/yourusername/better_controller)
+- **Issues**: [https://github.com/yourusername/better_controller/issues](https://github.com/yourusername/better_controller/issues)
+- **Email**: your.email@example.com
 
-This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
+## License
 
-BetterController aims to simplify the process of building RESTful controllers in Rails applications by providing a structured, configurable, and extensible system. Whether you need to handle complex API responses, validate parameters, or implement pagination, BetterController streamlines the entire process. Contributions, feedback, and feature requests are highly encouraged to help improve the gem further.
-
-For more details, please visit the [GitHub repository](https://github.com/alessiobussolari/better_controller).
+This gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).

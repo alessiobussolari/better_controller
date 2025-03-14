@@ -22,7 +22,7 @@ class ExampleModel
   end
 end
 
-class ExampleService < BetterController::Service
+class ExampleService < BetterController::Services::Service
   def model_class
     ExampleModel
   end
@@ -65,7 +65,7 @@ class ExampleService < BetterController::Service
 end
 
 class ExampleSerializer
-  include BetterController::Serializer
+  include BetterController::Serializers::Serializer
 
   attributes :id, :name, :email, :created_at, :updated_at
   

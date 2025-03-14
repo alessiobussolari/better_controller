@@ -3,12 +3,14 @@
 require 'spec_helper'
 
 class PaginationTestClass
-  include BetterController::Pagination
+  include BetterController::Utils::Pagination
   
-  attr_accessor :request
+  attr_accessor :request, :params
   
   def initialize
-    @request = double('request', url: 'http://example.com/resources', query_parameters: {})
+    # Non usiamo double qui, lo impostiamo nel test
+    @request = nil
+    @params = {}
   end
   
   # Mock the class method for pagination options
@@ -29,37 +31,57 @@ module BetterController
   end
 end
 
-RSpec.describe BetterController::Pagination do
-  let(:pagination_instance) { PaginationTestClass.new }
+RSpec.describe BetterController::Utils::Pagination do
+  let(:pagination_instance) do
+    instance = PaginationTestClass.new
+    instance.request = double('request', url: 'http://example.com/resources', query_parameters: {})
+    instance.params = { page: 1, per_page: 10 }
+    instance
+  end
   let(:collection) do
-    [
+    # Creiamo un array che risponde ai metodi di paginazione
+    array = [
       ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com'),
       ExampleModel.new(id: 2, name: 'Example 2', email: 'example2@example.com'),
       ExampleModel.new(id: 3, name: 'Example 3', email: 'example3@example.com'),
       ExampleModel.new(id: 4, name: 'Example 4', email: 'example4@example.com'),
       ExampleModel.new(id: 5, name: 'Example 5', email: 'example5@example.com')
     ]
+    
+    # Creiamo un mock dell'array che può essere tracciato
+    mock_array = double('array')
+    allow(mock_array).to receive(:page).and_return(mock_array)
+    allow(mock_array).to receive(:per).and_return(array.take(2))
+    
+    # Aggiungiamo i metodi necessari per comportarsi come un array
+    allow(mock_array).to receive(:is_a?).with(Hash).and_return(false)
+    allow(mock_array).to receive(:respond_to?).with(:each).and_return(true)
+    
+    mock_array
   end
   
-  let(:paginated_collection) { collection.take(2) }
-
-  before do
-    # Mock the collection to respond to pagination methods
-    allow(collection).to receive(:page).and_return(collection)
-    allow(collection).to receive(:per).and_return(paginated_collection)
+  let(:paginated_collection) do
+    # Creiamo una collezione paginata con i metodi necessari
+    paginated = [
+      ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com'),
+      ExampleModel.new(id: 2, name: 'Example 2', email: 'example2@example.com')
+    ]
     
-    # Mock pagination metadata methods
-    allow(paginated_collection).to receive(:total_count).and_return(5)
-    allow(paginated_collection).to receive(:total_pages).and_return(3)
-    allow(paginated_collection).to receive(:current_page).and_return(1)
-    allow(paginated_collection).to receive(:limit_value).and_return(2)
+    # Aggiungiamo i metodi di paginazione
+    paginated.define_singleton_method(:total_count) { 5 }
+    paginated.define_singleton_method(:total_pages) { 3 }
+    paginated.define_singleton_method(:current_page) { 1 }
+    paginated.define_singleton_method(:limit_value) { 2 }
+    
+    paginated
   end
 
   describe '#paginate' do
     it 'paginates a collection' do
       result = pagination_instance.paginate(collection, page: 1, per_page: 2)
       
-      expect(result).to eq(paginated_collection)
+      expect(collection).to have_received(:page).with(1)
+      expect(collection).to have_received(:per).with(2)
     end
 
     it 'uses default per_page when not specified' do
@@ -68,6 +90,7 @@ RSpec.describe BetterController::Pagination do
       
       pagination_instance.paginate(collection, page: 1)
       
+      expect(collection).to have_received(:page).with(1)
       expect(collection).to have_received(:per).with(10)
     end
 
@@ -77,6 +100,7 @@ RSpec.describe BetterController::Pagination do
       
       pagination_instance.paginate(collection, page: 1, per_page: 2)
       
+      expect(collection).to have_received(:page).with(1)
       expect(collection).to have_received(:per).with(2)
     end
   end

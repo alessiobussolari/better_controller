@@ -6,7 +6,7 @@ require 'time'
 require 'json'
 
 class ParamsHelpersTestClass
-  include BetterController::ParamsHelpers
+  include BetterController::Utils::ParamsHelpers
   
   attr_accessor :params
   
@@ -24,7 +24,7 @@ class ParamsHelpersTestClass
   end
 end
 
-RSpec.describe BetterController::ParamsHelpers do
+RSpec.describe BetterController::Utils::ParamsHelpers do
   let(:params) do
     {
       id: '1',

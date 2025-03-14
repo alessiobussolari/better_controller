@@ -79,12 +79,12 @@ class ExampleSerializer
   end
 end
 
-RSpec.describe BetterController::ResourcesController do
+RSpec.describe BetterController::Controllers::ResourcesController do
   # Create a test class that includes ResourcesController
   class TestController
-    include BetterController::ParamsHelpers
-    include BetterController::Logging
-    include BetterController::ResourcesController
+    include BetterController::Utils::ParamsHelpers
+    include BetterController::Utils::Logging
+    include BetterController::Controllers::ResourcesController
 
     attr_accessor :params, :request, :response_body, :response_status, :action_name, :resource
 

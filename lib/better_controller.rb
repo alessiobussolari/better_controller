@@ -8,20 +8,15 @@ require 'active_support/core_ext'
 loader = Zeitwerk::Loader.for_gem
 loader.setup
 
-# Manually require core files
+# Require version and configuration first
 require_relative 'better_controller/version'
-require_relative 'better_controller/method_not_overridden_error'
 require_relative 'better_controller/configuration'
-require_relative 'better_controller/logging'
-require_relative 'better_controller/base'
-require_relative 'better_controller/response_helpers'
-require_relative 'better_controller/parameter_validation'
-require_relative 'better_controller/action_helpers'
-require_relative 'better_controller/service'
-require_relative 'better_controller/serializer'
-require_relative 'better_controller/pagination'
-require_relative 'better_controller/params_helpers'
-require_relative 'better_controller/resources_controller'
+
+# Require index files from each subdirectory
+require_relative 'better_controller/utils/index'
+require_relative 'better_controller/controllers/index'
+require_relative 'better_controller/services/index'
+require_relative 'better_controller/serializers/index'
 
 # Rails integration
 require_relative 'better_controller/railtie' if defined?(Rails)
@@ -44,12 +39,12 @@ module BetterController
   # Include BetterController modules in a controller
   # @param base [Class] The controller class
   def self.included(base)
-    base.include(BetterController::Base)
-    base.include(BetterController::ResponseHelpers)
-    base.include(BetterController::ParameterValidation)
-    base.include(BetterController::ParamsHelpers)
-    base.include(BetterController::Logging)
-    base.extend(BetterController::ActionHelpers::ClassMethods)
-    base.extend(BetterController::Logging::ClassMethods)
+    base.include(BetterController::Controllers::Base)
+    base.include(BetterController::Controllers::ResponseHelpers)
+    base.include(BetterController::Utils::ParameterValidation)
+    base.include(BetterController::Utils::ParamsHelpers)
+    base.include(BetterController::Utils::Logging)
+    base.extend(BetterController::Controllers::ActionHelpers::ClassMethods)
+    base.extend(BetterController::Utils::Logging::ClassMethods)
   end
 end

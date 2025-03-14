@@ -2,7 +2,7 @@
 
 require 'spec_helper'
 
-RSpec.describe BetterController::Service do
+RSpec.describe BetterController::Services::Service do
   let(:service) { ExampleService.new }
   let(:valid_attributes) { { name: 'Test Example', email: 'test@example.com' } }
   let(:invalid_attributes) { { name: '', email: 'invalid' } }

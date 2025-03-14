@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 module BetterController
-  # Module providing logging capabilities
-  module Logging
+  module Utils
+    # Module providing logging capabilities
+    module Logging
     extend ActiveSupport::Concern
 
     included do
@@ -96,6 +97,7 @@ module BetterController
       def logger
         better_controller_logger
       end
+    end
     end
   end
 end

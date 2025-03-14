@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
 module BetterController
-  # Module providing standardized RESTful resource controller functionality
-  module ResourcesController
-    extend ActiveSupport::Concern
+  module Controllers
+    # Module providing standardized RESTful resource controller functionality
+    module ResourcesController
+      extend ActiveSupport::Concern
 
-    included do
-      # Include the base BetterController modules
-      include BetterController::Base
-      include BetterController::ResponseHelpers
-      include BetterController::ParameterValidation
-      include BetterController::Pagination
+      included do
+        # Include the base BetterController modules
+        include BetterController::Controllers::Base
+        include BetterController::Controllers::ResponseHelpers
+        include BetterController::Utils::ParameterValidation
+        include BetterController::Utils::Pagination
 
       # Configure default pagination
       configure_pagination enabled: true, per_page: 25
@@ -259,5 +260,6 @@ module BetterController
     def resource_update_params
       resource_params
     end
+  end
   end
 end

@@ -11,13 +11,10 @@ RSpec.describe BetterController do
     # Create a test controller class that includes BetterController
     class TestBaseController
       def self.before_action(*args); end
-      def self.include(mod); end
       def self.class_attribute(*args, **kwargs); end
       
-      # Manually include the modules that BetterController would include
-      include BetterController::Base
-      include BetterController::ResponseHelpers
-      include BetterController::ParameterValidation
+      # Include BetterController directly
+      include BetterController
       
       def params
         {}
