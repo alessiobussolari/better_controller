@@ -5,18 +5,29 @@ module BetterController
   module Configuration
     # Default configuration options
     DEFAULTS = {
-      pagination:     {
+      pagination:              {
         enabled:  true,
-        per_page: 25,
+        per_page: 25
       },
-      serialization:  {
+      serialization:           {
         include_root:  false,
-        camelize_keys: true,
+        camelize_keys: true
       },
-      error_handling: {
+      error_handling:          {
         log_errors:      true,
-        detailed_errors: true,
+        detailed_errors: true
       },
+      html:                    {
+        page_component_namespace: 'Templates',
+        flash_partial:            'shared/flash',
+        form_errors_partial:      'shared/form_errors'
+      },
+      turbo:                   {
+        enabled:               true,
+        default_frame:         nil,
+        auto_flash:            true,
+        auto_form_errors:      true
+      }
     }.freeze
 
     class << self
@@ -64,6 +75,42 @@ module BetterController
     # @return [Hash] The error handling configuration
     def self.error_handling
       options[:error_handling]
+    end
+
+    # Get the HTML configuration
+    # @return [Hash] The HTML configuration
+    def self.html
+      options[:html]
+    end
+
+    # Get the Turbo configuration
+    # @return [Hash] The Turbo configuration
+    def self.turbo
+      options[:turbo]
+    end
+
+    # Get the page component namespace
+    # @return [String] The namespace for page components
+    def self.page_component_namespace
+      html[:page_component_namespace]
+    end
+
+    # Get the flash partial path
+    # @return [String] The flash partial path
+    def self.flash_partial
+      html[:flash_partial]
+    end
+
+    # Get the form errors partial path
+    # @return [String] The form errors partial path
+    def self.form_errors_partial
+      html[:form_errors_partial]
+    end
+
+    # Check if Turbo is enabled
+    # @return [Boolean] Whether Turbo is enabled
+    def self.turbo_enabled?
+      turbo[:enabled]
     end
   end
 end

@@ -445,10 +445,145 @@ RSpec.describe BetterController::Controllers::ResourcesController do
   describe '#serialize_resource' do
     it 'serializes a resource using the specified serializer' do
       serialized = controller.send(:serialize_resource, example_model, ExampleSerializer)
-      
+
       expect(serialized).to be_a(Hash)
       expect(serialized).to have_key(:id)
       expect(serialized).to have_key(:name)
+    end
+
+    it 'returns resource unchanged when serializer is nil' do
+      result = controller.send(:serialize_resource, example_model, nil)
+      expect(result).to eq(example_model)
+    end
+  end
+
+  describe '#serialization_options' do
+    it 'returns an empty hash by default' do
+      expect(controller.send(:serialization_options)).to eq({})
+    end
+  end
+
+  describe 'action-specific serializers' do
+    it 'index_serializer returns resource_serializer' do
+      expect(controller.send(:index_serializer)).to eq(controller.send(:resource_serializer))
+    end
+
+    it 'show_serializer returns resource_serializer' do
+      expect(controller.send(:show_serializer)).to eq(controller.send(:resource_serializer))
+    end
+
+    it 'create_serializer returns resource_serializer' do
+      expect(controller.send(:create_serializer)).to eq(controller.send(:resource_serializer))
+    end
+
+    it 'update_serializer returns resource_serializer' do
+      expect(controller.send(:update_serializer)).to eq(controller.send(:resource_serializer))
+    end
+
+    it 'destroy_serializer returns resource_serializer' do
+      expect(controller.send(:destroy_serializer)).to eq(controller.send(:resource_serializer))
+    end
+  end
+
+  describe '#add_meta and #meta' do
+    let(:base_controller_class) do
+      Class.new do
+        include BetterController::Controllers::ResourcesController
+        def resource_service_class; ExampleService; end
+        def resource_params_root_key; :example; end
+      end
+    end
+
+    it 'meta returns an empty hash by default' do
+      base = base_controller_class.new
+      expect(base.send(:meta)).to eq({})
+    end
+
+    it 'add_meta adds key/value to meta hash' do
+      base = base_controller_class.new
+      base.send(:add_meta, :total, 100)
+      expect(base.send(:meta)[:total]).to eq(100)
+    end
+  end
+
+  describe '#resource_service' do
+    it 'returns a new instance of resource_service_class' do
+      service = controller.send(:resource_service)
+      expect(service).to be_a(ExampleService)
+    end
+  end
+
+  describe '#resource_service_class' do
+    it 'raises NotImplementedError when not overridden' do
+      # Create a controller without resource_service_class override
+      base_controller_class = Class.new do
+        include BetterController::Controllers::ResourcesController
+      end
+      base = base_controller_class.new
+      expect { base.send(:resource_service_class) }.to raise_error(NotImplementedError)
+    end
+  end
+
+  describe '#resource_params_root_key' do
+    it 'raises NotImplementedError when not overridden' do
+      # Create a controller without resource_params_root_key override
+      base_controller_class = Class.new do
+        include BetterController::Controllers::ResourcesController
+        def resource_service_class; ExampleService; end
+      end
+      base = base_controller_class.new
+      expect { base.send(:resource_params_root_key) }.to raise_error(NotImplementedError)
+    end
+  end
+
+  describe 'message methods' do
+    context 'when not overridden' do
+      let(:base_controller_class) do
+        Class.new do
+          include BetterController::Controllers::ResourcesController
+          def resource_service_class; ExampleService; end
+          def resource_params_root_key; :example; end
+        end
+      end
+
+      it 'create_message returns nil' do
+        expect(base_controller_class.new.send(:create_message)).to be_nil
+      end
+
+      it 'update_message returns nil' do
+        expect(base_controller_class.new.send(:update_message)).to be_nil
+      end
+
+      it 'destroy_message returns nil' do
+        expect(base_controller_class.new.send(:destroy_message)).to be_nil
+      end
+    end
+  end
+
+  describe '#resource_key_param' do
+    it 'returns params[:id]' do
+      controller.params = { id: 42 }
+      expect(controller.send(:resource_key_param)).to eq(42)
+    end
+  end
+
+  describe '#ancestry_key_params' do
+    it 'returns empty hash by default' do
+      expect(controller.send(:ancestry_key_params)).to eq({})
+    end
+  end
+
+  describe '#resource_create_params' do
+    it 'returns resource_params' do
+      controller.params = { example: { name: 'Test' } }
+      expect(controller.send(:resource_create_params)).to eq({ name: 'Test' })
+    end
+  end
+
+  describe '#resource_update_params' do
+    it 'returns resource_params' do
+      controller.params = { example: { name: 'Updated' } }
+      expect(controller.send(:resource_update_params)).to eq({ name: 'Updated' })
     end
   end
 end

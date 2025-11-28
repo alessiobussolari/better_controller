@@ -39,6 +39,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'kaminari', '~> 1.2' # For pagination support
   spec.add_dependency 'zeitwerk', '~> 2.6'
 
+  # Optional dependencies (for HtmlController with Turbo support)
+  # spec.add_dependency 'turbo-rails', '>= 1.0'     # For Turbo Streams/Frames
+  # spec.add_dependency 'view_component', '>= 3.0' # For ViewComponent rendering
+
   # Development dependencies
   spec.add_development_dependency 'rails', '>= 6.0'
   spec.add_development_dependency 'rspec-rails', '~> 5.0'
@@ -46,6 +50,8 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rubocop-rails', '~> 2.19'
   spec.add_development_dependency 'rubocop-rspec', '~> 2.22'
   spec.add_development_dependency 'simplecov', '~> 0.22'
+  spec.add_development_dependency 'turbo-rails', '>= 1.0'
+  spec.add_development_dependency 'view_component', '>= 3.0'
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html

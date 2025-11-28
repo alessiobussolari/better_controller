@@ -11,3 +11,16 @@
 .rspec_status
 
 .idea
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Editor swap files
+*.swp
+*.swo
+
+# VS Code
+.vscode/
