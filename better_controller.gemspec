@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name    = 'better_controller'
   spec.version = BetterController::VERSION
   spec.authors = ['alessiobussolari']
-  spec.email   = ['alessio@cosmic.tech']
+  spec.email   = ['alessio.bussolari@pandev.it']
 
   spec.summary               = 'A Ruby gem to enhance Rails controllers with additional functionality'
   spec.description           = 'BetterController provides tools and utilities to improve Rails controllers, making them more maintainable and feature-rich.'

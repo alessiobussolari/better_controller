@@ -586,7 +586,7 @@ This gem is available as open source under the terms of the [MIT License](https:
 
 ## Author
 
-Alessio Bussolari - [alessio@cosmic.tech](mailto:alessio@cosmic.tech)
+Alessio Bussolari - [alessio.bussolari@pandev.it](mailto:alessio.bussolari@pandev.it)
 
 - GitHub: [@alessiobussolari](https://github.com/alessiobussolari)
 - Repository: [https://github.com/alessiobussolari/better_controller](https://github.com/alessiobussolari/better_controller)
