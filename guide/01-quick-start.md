@@ -127,6 +127,70 @@ By including BetterController, you have access to:
 - **Parameter Helpers** - `boolean_param`, `integer_param`, etc.
 - **Pagination** - `paginate`, `pagination_meta`
 
+## Complete CLI Reference
+
+### Step-by-Step Installation
+
+```bash
+# 1. Add to Gemfile
+echo "gem 'better_controller'" >> Gemfile
+
+# 2. Install dependencies
+bundle install
+
+# 3. Generate initializer
+rails generate better_controller:install
+# Output:
+#   create  config/initializers/better_controller.rb
+#   route   # BetterController routes can be added here
+
+# 4. Generate your first controller
+rails generate better_controller:controller Products
+# Output:
+#   create  app/controllers/products_controller.rb
+```
+
+### Generator Options
+
+| Command | Description |
+|---------|-------------|
+| `rails g better_controller:install` | Create initializer |
+| `rails g better_controller:controller NAME` | Create controller with all actions |
+| `rails g better_controller:controller NAME actions...` | Create with specific actions |
+| `rails g better_controller:controller NAME --model=X` | Use custom model name |
+
+### Examples
+
+```bash
+# Generate Users controller with all CRUD actions
+rails generate better_controller:controller Users
+
+# Generate only index and show actions
+rails generate better_controller:controller Users index show
+
+# Generate controller for Account model
+rails generate better_controller:controller Users --model=Account
+
+# Generate namespaced API controller
+rails generate better_controller:controller Api::V1::Users
+```
+
+### Development Commands
+
+```bash
+# Run all tests
+bundle exec rspec
+
+# Run specific test file
+bundle exec rspec spec/controllers/users_controller_spec.rb
+
+# Run linter
+bundle exec rubocop
+
+# Auto-fix linter issues
+bundle exec rubocop -a
+```
+
 ## Next Steps
 
 - Read the [Configuration Guide](../docs/02-configuration.md) to customize settings

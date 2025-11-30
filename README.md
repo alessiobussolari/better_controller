@@ -1,4 +1,4 @@
-# BetterController
+# 🎮 BetterController
 
 [![Gem Version](https://badge.fury.io/rb/better_controller.svg)](https://badge.fury.io/rb/better_controller)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -6,7 +6,11 @@
 
 A Ruby gem for building modern Rails controllers with a declarative DSL, Hotwire/Turbo support, and ViewComponent integration.
 
-## Features
+## 💡 Why BetterController?
+
+After seeing too many Rails projects with business logic scattered across controllers, I created BetterController. It's part of the **Better gems** family with a simple mission: enforce separation of concerns and provide a clear standard for every project. Lean controllers, services where they belong, and a DSL that makes everything readable.
+
+## ✨ Features
 
 - **Declarative Action DSL** - Define controller actions with a clean, expressive syntax
 - **Hotwire/Turbo Support** - Built-in support for Turbo Frames and Turbo Streams
@@ -15,7 +19,7 @@ A Ruby gem for building modern Rails controllers with a declarative DSL, Hotwire
 - **Error Handling** - Comprehensive error classification and response formatting
 - **BYOS (Bring Your Own Services/Serializers)** - Use any service pattern or serializer you prefer
 
-## Installation
+## 📦 Installation
 
 Add to your Gemfile:
 
@@ -38,7 +42,7 @@ gem 'turbo-rails', '>= 1.0'
 gem 'view_component', '>= 3.0'
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Basic Setup
 
@@ -97,7 +101,7 @@ class Users::IndexService
 end
 ```
 
-## Action DSL
+## 🎯 Action DSL
 
 ### Defining Actions
 
@@ -124,7 +128,7 @@ action :show do
 end
 ```
 
-### Response Handlers
+### 📤 Response Handlers
 
 Define how to respond based on success or failure:
 
@@ -156,7 +160,7 @@ action :create do
 end
 ```
 
-### Error Types
+### ⚠️ Error Types
 
 Built-in error classifications:
 
@@ -165,7 +169,7 @@ Built-in error classifications:
 - `:authorization` - Authorization failures
 - `:any` - Catch-all for other errors
 
-### Page and Component Rendering
+### 🖼️ Page and Component Rendering
 
 Render ViewComponents directly:
 
@@ -179,11 +183,11 @@ action :help do
 end
 ```
 
-## Action DSL Reference
+## 📋 Action DSL Reference
 
 Complete list of all available parameters in the `action` block:
 
-### Service Configuration
+### ⚙️ Service Configuration
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -199,7 +203,7 @@ action :create do
 end
 ```
 
-### Page and Component
+### 🖼️ Page and Component
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -225,7 +229,7 @@ action :admin_index do
 end
 ```
 
-### Response Handlers
+### 📤 Response Handlers
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -262,7 +266,7 @@ action :create do
 end
 ```
 
-### Callbacks
+### 🔄 Callbacks
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -277,7 +281,7 @@ action :update do
 end
 ```
 
-### Authentication and Authorization
+### 🔐 Authentication and Authorization
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -292,7 +296,7 @@ action :public_profile do
 end
 ```
 
-## Turbo Support
+## ⚡ Turbo Support
 
 ### Turbo Stream Actions
 
@@ -347,7 +351,7 @@ stream_before(:item, partial: 'new_item')
 stream_after(:item, partial: 'new_item')
 ```
 
-## ViewComponent Integration
+## 🧩 ViewComponent Integration
 
 ### Page Config Rendering
 
@@ -388,7 +392,7 @@ Components automatically receive:
 - `resource` - Single resource from result
 - `collection` - Collection from result
 
-## Configuration
+## ⚙️ Configuration
 
 Create an initializer:
 
@@ -415,7 +419,7 @@ BetterController.configure do |config|
 end
 ```
 
-## Search/Filter Pattern
+## 🔍 Search/Filter Pattern
 
 Handle initial page load and subsequent filter updates:
 
@@ -438,7 +442,7 @@ end
 
 The HTML request renders the full page, while Turbo Stream requests update only the changed elements.
 
-## API Controllers
+## 🔌 API Controllers
 
 For JSON APIs, use `BetterControllerApi`:
 
@@ -496,7 +500,7 @@ Error response:
 
 The `meta.version` is configurable (see Configuration section).
 
-## Utilities
+## 🛠️ Utilities
 
 ### Parameter Validation
 
@@ -543,7 +547,7 @@ class UsersController < ApplicationController
 end
 ```
 
-## Testing
+## 🧪 Testing
 
 BetterController is fully tested with RSpec. Run the test suite:
 
@@ -557,14 +561,14 @@ INTEGRATION_TESTS=true bundle exec rspec spec/integration spec/generators
 
 Current coverage: 98%+ with 587 examples.
 
-## Requirements
+## 📌 Requirements
 
 - Ruby >= 3.0
 - Rails >= 6.0
 - Optional: turbo-rails >= 1.0
 - Optional: view_component >= 3.0
 
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/my-feature`)
@@ -575,11 +579,11 @@ Current coverage: 98%+ with 587 examples.
 7. Push to the branch (`git push origin feature/my-feature`)
 8. Create a Pull Request
 
-## License
+## 📄 License
 
 This gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
 
-## Author
+## 👤 Author
 
 Alessio Bussolari - [alessio.bussolari@pandev.it](mailto:alessio.bussolari@pandev.it)
 

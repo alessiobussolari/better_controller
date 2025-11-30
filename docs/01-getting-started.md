@@ -36,6 +36,50 @@ rails generate better_controller:install
 
 This creates `config/initializers/better_controller.rb` with default settings.
 
+## CLI Commands Reference
+
+### Installation Commands
+
+```bash
+# Add gem to Gemfile and install
+bundle add better_controller
+
+# Or manually add to Gemfile then:
+bundle install
+```
+
+### Generator Commands
+
+```bash
+# Install BetterController (creates initializer)
+rails generate better_controller:install
+
+# Generate a controller with all CRUD actions
+rails generate better_controller:controller Users
+
+# Generate controller with specific actions only
+rails generate better_controller:controller Users index show create update destroy
+
+# Generate controller with custom model name
+rails generate better_controller:controller Users --model=Account
+
+# Generate namespaced controller
+rails generate better_controller:controller Admin::Users
+```
+
+### Development Commands
+
+```bash
+# Run tests
+bundle exec rspec
+
+# Run linter
+bundle exec rubocop
+
+# Run linter with auto-fix
+bundle exec rubocop -a
+```
+
 ## Basic Usage
 
 ### HTML Controllers with Turbo Support

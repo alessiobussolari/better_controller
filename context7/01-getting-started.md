@@ -32,6 +32,59 @@ rails generate better_controller:install
 
 --------------------------------
 
+## CLI Commands Reference
+
+### Installation
+
+```bash
+bundle add better_controller
+```
+
+--------------------------------
+
+### Install Generator
+
+```bash
+rails generate better_controller:install
+```
+
+Creates: `config/initializers/better_controller.rb`
+
+--------------------------------
+
+### Controller Generator
+
+```bash
+# All actions
+rails generate better_controller:controller Users
+
+# Specific actions
+rails generate better_controller:controller Users index show create
+
+# Custom model
+rails generate better_controller:controller Users --model=Account
+
+# Namespaced
+rails generate better_controller:controller Admin::Users
+```
+
+--------------------------------
+
+### Development Commands
+
+```bash
+# Run tests
+bundle exec rspec
+
+# Run linter
+bundle exec rubocop
+
+# Auto-fix linter issues
+bundle exec rubocop -a
+```
+
+--------------------------------
+
 ## Basic Setup
 
 ### HTML Controller with Turbo
