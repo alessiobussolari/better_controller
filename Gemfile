@@ -12,3 +12,10 @@ gem 'rspec', '~> 3.0'
 gem 'rubocop', '~> 1.21'
 
 gem 'rubocop-performance', '~> 1.24', groups: %i[development test]
+
+group :test do
+  gem 'rails', '>= 6.0'
+  gem 'rspec-rails', '~> 6.0'
+  gem 'sqlite3', '~> 2.1'
+  gem 'generator_spec', '~> 0.10'
+end

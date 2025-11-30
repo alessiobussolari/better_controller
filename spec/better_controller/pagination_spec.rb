@@ -24,13 +24,6 @@ class PaginationTestClass
   end
 end
 
-# Mock the BetterController configuration
-module BetterController
-  def self.configuration
-    @configuration ||= { pagination: { per_page: 25 } }
-  end
-end
-
 RSpec.describe BetterController::Utils::Pagination do
   let(:pagination_instance) do
     instance = PaginationTestClass.new
@@ -121,10 +114,59 @@ RSpec.describe BetterController::Utils::Pagination do
   describe '#pagination_links' do
     it 'returns pagination links' do
       links = pagination_instance.pagination_links(paginated_collection)
-      
+
       expect(links).to include(:self, :first, :last, :next)
       expect(links[:self]).to include('http://example.com/resources')
       expect(links[:next]).to include('page=2')
+    end
+  end
+
+  describe '#paginate with add_meta' do
+    let(:pagination_with_meta) do
+      Class.new do
+        include BetterController::Utils::Pagination
+
+        attr_accessor :request, :params, :meta_data
+
+        def initialize
+          @request = nil
+          @params = {}
+          @meta_data = {}
+        end
+
+        def self.pagination_options
+          { enabled: true, per_page: 25 }
+        end
+
+        def add_meta(key, value)
+          @meta_data[key] = value
+        end
+      end
+    end
+
+    it 'calls add_meta with pagination metadata' do
+      instance = pagination_with_meta.new
+      instance.request = double('request', url: 'http://example.com/resources', query_parameters: {})
+      instance.params = { page: 1, per_page: 2 }
+
+      paginated_result = [ExampleModel.new(id: 1, name: 'Test', email: 'test@example.com')]
+      paginated_result.define_singleton_method(:total_count) { 10 }
+      paginated_result.define_singleton_method(:total_pages) { 5 }
+      paginated_result.define_singleton_method(:current_page) { 1 }
+      paginated_result.define_singleton_method(:limit_value) { 2 }
+
+      mock_collection = double('collection')
+      allow(mock_collection).to receive(:page).and_return(mock_collection)
+      allow(mock_collection).to receive(:per).and_return(paginated_result)
+
+      instance.paginate(mock_collection, page: 1, per_page: 2)
+
+      expect(instance.meta_data[:pagination]).to include(
+        total_count: 10,
+        total_pages: 5,
+        current_page: 1,
+        per_page: 2
+      )
     end
   end
 end

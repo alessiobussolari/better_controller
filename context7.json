@@ -1,0 +1,16 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "BetterController",
+  "description": "Standardized Rails controller patterns with declarative DSL, Turbo support, and ViewComponent integration.",
+  "folders": ["context7", "docs", "guide"],
+  "excludeFolders": ["spec", "tmp", "vendor", "node_modules", "pkg"],
+  "excludeFiles": [],
+  "rules": [
+    "BetterController is BYOS - it does NOT provide services or serializers",
+    "Use include BetterController for HTML controllers with Turbo support",
+    "Use include BetterControllerApi for JSON API controllers",
+    "API responses use {data, meta: {version}} format",
+    "Override serialize_resource/serialize_collection for custom serialization",
+    "Result class wraps service responses with success?/failure? methods"
+  ]
+}

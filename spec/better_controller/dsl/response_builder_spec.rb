@@ -42,6 +42,24 @@ RSpec.describe BetterController::Dsl::ResponseBuilder do
     end
   end
 
+  describe '#csv' do
+    it 'stores a csv handler block' do
+      builder.csv { 'csv response' }
+
+      expect(builder.handlers[:csv]).to be_a(Proc)
+      expect(builder.handlers[:csv].call).to eq('csv response')
+    end
+  end
+
+  describe '#xml' do
+    it 'stores an xml handler block' do
+      builder.xml { { data: 'xml' } }
+
+      expect(builder.handlers[:xml]).to be_a(Proc)
+      expect(builder.handlers[:xml].call).to eq({ data: 'xml' })
+    end
+  end
+
   describe '#redirect_to' do
     it 'stores redirect configuration' do
       builder.redirect_to('/users', notice: 'Success!')
@@ -125,6 +143,16 @@ RSpec.describe BetterController::Dsl::ResponseBuilder do
       builder.json { { success: true } }
 
       expect(builder.handlers.keys).to contain_exactly(:html, :turbo_stream, :json)
+    end
+
+    it 'supports all five format handlers' do
+      builder.html { 'html' }
+      builder.json { { success: true } }
+      builder.turbo_stream { append :list }
+      builder.csv { 'csv data' }
+      builder.xml { { data: 'xml' } }
+
+      expect(builder.handlers.keys).to contain_exactly(:html, :json, :turbo_stream, :csv, :xml)
     end
   end
 end

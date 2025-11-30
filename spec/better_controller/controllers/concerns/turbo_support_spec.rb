@@ -294,4 +294,187 @@ RSpec.describe BetterController::Controllers::Concerns::TurboSupport do
       expect(result[:options][:status]).to eq(:found)
     end
   end
+
+  describe '#render_streams' do
+    it 'renders multiple streams' do
+      streams = [
+        { action: :update, target: :flash },
+        { action: :remove, target: :item }
+      ]
+
+      controller.render_streams(streams)
+
+      expect(controller.rendered[:turbo_stream]).to be_an(Array)
+      expect(controller.rendered[:turbo_stream].length).to eq(2)
+    end
+
+    it 'accepts additional streams from block' do
+      streams = [{ action: :update, target: :flash }]
+
+      controller.render_streams(streams) do |additional|
+        additional << { action: :remove, target: 'item' }
+      end
+
+      expect(controller.rendered[:turbo_stream].length).to eq(2)
+    end
+  end
+
+  describe '#resolve_stream_content' do
+    it 'returns html when specified' do
+      config = { html: '<div>Hello</div>' }
+
+      content = controller.send(:resolve_stream_content, config)
+
+      expect(content).to eq('<div>Hello</div>')
+    end
+
+    it 'returns nil when nothing specified' do
+      config = { action: :remove }
+
+      content = controller.send(:resolve_stream_content, config)
+
+      expect(content).to be_nil
+    end
+
+    context 'with component' do
+      let(:component_class) do
+        Class.new do
+          def initialize(**args)
+            @args = args
+          end
+
+          def to_s
+            '<div>Component</div>'
+          end
+        end
+      end
+
+      it 'renders component' do
+        config = { component: component_class, locals: {} }
+
+        content = controller.send(:resolve_stream_content, config)
+
+        expect(content).to be_present
+      end
+    end
+
+    context 'with partial' do
+      it 'renders partial' do
+        allow(controller).to receive(:render_to_string)
+          .with(partial: 'users/user', locals: { id: 1 })
+          .and_return('<div>User</div>')
+
+        config = { partial: 'users/user', locals: { id: 1 } }
+
+        content = controller.send(:resolve_stream_content, config)
+
+        expect(content).to eq('<div>User</div>')
+      end
+    end
+  end
+
+  describe '#build_stream_locals' do
+    it 'duplicates base locals' do
+      base = { key: 'value' }
+
+      result = controller.send(:build_stream_locals, base)
+
+      expect(result[:key]).to eq('value')
+      expect(result).not_to be(base)
+    end
+
+    it 'adds result when present' do
+      controller.instance_variable_set(:@result, { success: true })
+
+      result = controller.send(:build_stream_locals, {})
+
+      expect(result[:result]).to eq({ success: true })
+    end
+
+    it 'adds resource when present' do
+      controller.instance_variable_set(:@resource, 'test_resource')
+
+      result = controller.send(:build_stream_locals, {})
+
+      expect(result[:resource]).to eq('test_resource')
+    end
+
+    it 'handles nil base locals' do
+      result = controller.send(:build_stream_locals, nil)
+
+      expect(result).to eq({})
+    end
+  end
+
+  describe '#stream_before' do
+    it 'creates a before stream' do
+      stream = controller.stream_before(:user_1, partial: 'users/user')
+
+      expect(stream[:action]).to eq(:before)
+      expect(stream[:target]).to eq('user_1')
+    end
+  end
+
+  describe '#stream_after' do
+    it 'creates an after stream' do
+      stream = controller.stream_after(:user_1, partial: 'users/user')
+
+      expect(stream[:action]).to eq(:after)
+      expect(stream[:target]).to eq('user_1')
+    end
+  end
+
+  describe '#respond_with_turbo_stream' do
+    context 'when turbo stream request' do
+      before do
+        controller.request.format.turbo_stream = true
+      end
+
+      it 'renders turbo streams' do
+        controller.respond_with_turbo_stream do |streams|
+          streams << { action: :update, target: 'flash' }
+        end
+
+        expect(controller.rendered[:turbo_stream]).to be_an(Array)
+      end
+    end
+
+    context 'when not turbo stream request' do
+      it 'yields the block' do
+        called = false
+        controller.respond_with_turbo_stream { called = true }
+
+        expect(called).to be true
+      end
+    end
+  end
+
+  describe '#render_in_frame' do
+    context 'when turbo frame request' do
+      before do
+        controller.request.headers['Turbo-Frame'] = 'content'
+      end
+
+      it 'sets layout to false by default' do
+        controller.render_in_frame(template: 'users/show')
+
+        expect(controller.rendered[:layout]).to be false
+      end
+
+      it 'respects explicit layout option' do
+        controller.render_in_frame(template: 'users/show', layout: 'application')
+
+        expect(controller.rendered[:layout]).to eq('application')
+      end
+    end
+
+    context 'when not turbo frame request' do
+      it 'renders normally' do
+        controller.render_in_frame(template: 'users/show')
+
+        expect(controller.rendered[:template]).to eq('users/show')
+        expect(controller.rendered[:layout]).to be_nil
+      end
+    end
+  end
 end

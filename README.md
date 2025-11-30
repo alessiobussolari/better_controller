@@ -11,9 +11,9 @@ A Ruby gem for building modern Rails controllers with a declarative DSL, Hotwire
 - **Declarative Action DSL** - Define controller actions with a clean, expressive syntax
 - **Hotwire/Turbo Support** - Built-in support for Turbo Frames and Turbo Streams
 - **ViewComponent Integration** - Seamless rendering of ViewComponents with page configurations
-- **Service Layer Pattern** - First-class support for service objects
 - **Flexible Response Handling** - Unified handling of HTML, Turbo Stream, and JSON responses
 - **Error Handling** - Comprehensive error classification and response formatting
+- **BYOS (Bring Your Own Services/Serializers)** - Use any service pattern or serializer you prefer
 
 ## Installation
 
@@ -76,9 +76,10 @@ end
 
 ### Service Integration
 
-BetterController works seamlessly with service objects that return a result hash:
+BetterController works seamlessly with any service pattern you prefer. Services should return a result hash:
 
 ```ruby
+# Use any service pattern: Interactor, Trailblazer, simple PORO, etc.
 class Users::IndexService
   def call
     users = User.all.order(created_at: :desc)
@@ -221,19 +222,6 @@ action :admin_index do
   page_config do |config|
     config[:title] = "Admin Users"
   end
-end
-```
-
-### Turbo Support
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `turbo_frame(frame_id)` | Symbol/String | Turbo Frame ID for this action |
-
-```ruby
-action :edit do
-  service Users::EditService
-  turbo_frame :user_form
 end
 ```
 
@@ -407,6 +395,9 @@ Create an initializer:
 ```ruby
 # config/initializers/better_controller.rb
 BetterController.configure do |config|
+  # API version included in all responses (default: 'v1')
+  config.api_version = 'v1'
+
   # ViewComponent namespace for page types
   config.page_component_namespace = 'Templates'
 
@@ -420,12 +411,6 @@ BetterController.configure do |config|
   config.error_handling = {
     log_errors: true,
     detailed_errors: Rails.env.development?
-  }
-
-  # Serialization
-  config.serialization = {
-    include_root: false,
-    camelize_keys: true
   }
 end
 ```
@@ -484,12 +469,14 @@ end
 
 ### Response Format
 
+All API responses follow a consistent structure with `data` and `meta`:
+
 Success response:
 
 ```json
 {
-  "success": true,
-  "data": { "id": 1, "name": "John" }
+  "data": { "id": 1, "name": "John" },
+  "meta": { "version": "v1" }
 }
 ```
 
@@ -497,13 +484,17 @@ Error response:
 
 ```json
 {
-  "success": false,
-  "error": {
-    "type": "ActiveRecord::RecordNotFound",
-    "message": "Couldn't find User with id=999"
-  }
+  "data": {
+    "error": {
+      "type": "ActiveRecord::RecordNotFound",
+      "message": "Couldn't find User with id=999"
+    }
+  },
+  "meta": { "version": "v1" }
 }
 ```
+
+The `meta.version` is configurable (see Configuration section).
 
 ## Utilities
 
@@ -557,10 +548,14 @@ end
 BetterController is fully tested with RSpec. Run the test suite:
 
 ```bash
-bundle exec rspec
+# Unit tests
+bundle exec rspec spec/better_controller
+
+# Integration tests (require Rails)
+INTEGRATION_TESTS=true bundle exec rspec spec/integration spec/generators
 ```
 
-Current coverage: 75%+ with 444 examples.
+Current coverage: 98%+ with 587 examples.
 
 ## Requirements
 

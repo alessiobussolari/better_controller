@@ -36,6 +36,7 @@ Gem::Specification.new do |spec|
   # Dependencies
   spec.add_dependency 'actionpack', '>= 6.0'
   spec.add_dependency 'activesupport', '>= 6.0'
+  spec.add_dependency 'csv', '>= 3.0' # For CSV export support (stdlib in Ruby < 3.4)
   spec.add_dependency 'kaminari', '~> 1.2' # For pagination support
   spec.add_dependency 'zeitwerk', '~> 2.6'
 
@@ -50,6 +51,8 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rubocop-rails', '~> 2.19'
   spec.add_development_dependency 'rubocop-rspec', '~> 2.22'
   spec.add_development_dependency 'simplecov', '~> 0.22'
+  spec.add_development_dependency 'generator_spec', '~> 0.10'
+  spec.add_development_dependency 'ammeter', '~> 1.1'
   spec.add_development_dependency 'turbo-rails', '>= 1.0'
   spec.add_development_dependency 'view_component', '>= 3.0'
 

@@ -84,7 +84,6 @@ RSpec.describe BetterController do
     it "includes the ResponseHelpers module" do
       expect(controller).to respond_to(:respond_with_success)
       expect(controller).to respond_to(:respond_with_error)
-      expect(controller).to respond_to(:respond_with_pagination)
     end
 
     it "includes the ParameterValidation module" do

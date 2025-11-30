@@ -11,8 +11,13 @@ module BetterController
         class_attribute :better_controller_options, default: {}
 
         # Set up rescue handlers if enabled
-        if defined?(rescue_from) && BetterController.config.error_handling[:detailed_errors]
-          rescue_from StandardError, with: :better_controller_handle_error
+        if defined?(rescue_from)
+          # Handle ServiceError from wrapped responses
+          rescue_from BetterController::Errors::ServiceError, with: :handle_service_error
+
+          if BetterController.config.error_handling[:detailed_errors]
+            rescue_from StandardError, with: :better_controller_handle_error
+          end
         end
       end
 
@@ -24,7 +29,8 @@ module BetterController
       def execute_action(&)
         log_debug("Executing action: #{action_name}") if respond_to?(:action_name)
         result = instance_eval(&)
-        respond_with_success(result)
+        # Only call respond_with_success if the block hasn't already rendered
+        respond_with_success(result) unless performed?
       rescue StandardError => e
         handle_exception(e)
       end
@@ -46,17 +52,46 @@ module BetterController
 
       private
 
+      # Handle ServiceError from wrapped responses
+      # @param error [BetterController::Errors::ServiceError] The service error
+      # @return [Object] The error response
+      def handle_service_error(error)
+        # Log if logging is enabled
+        if respond_to?(:log_error) && BetterController.config.error_handling[:log_errors]
+          log_error("Service error: #{error.message}", error.meta)
+        end
+
+        respond_with_error(
+          error.message,
+          status: error.meta[:status] || :unprocessable_entity,
+          meta:   { errors: error.errors }.compact
+        )
+      end
+
       # Handle exceptions in a standardized way
       # @param exception [Exception] The exception to handle
       # @param options [Hash] Options for handling the exception
       # @return [Object] The error response
-      def handle_exception(exception, options = {})
+      def handle_exception(exception, _options = {})
         # Log the exception if logging is enabled
         if respond_to?(:log_exception) && BetterController.config.error_handling[:log_errors]
           log_exception(exception, { controller: self.class.name, action: action_name })
         end
 
-        respond_with_error(exception, options)
+        # Determine status based on exception type
+        status = exception_to_status(exception)
+
+        respond_with_error(exception, status: status)
+      end
+
+      # Map exception to HTTP status code
+      # @param exception [Exception] The exception
+      # @return [Symbol] The HTTP status code
+      def exception_to_status(exception)
+        return :not_found if defined?(ActiveRecord::RecordNotFound) && exception.is_a?(ActiveRecord::RecordNotFound)
+        return :unprocessable_entity if defined?(ActiveRecord::RecordInvalid) && exception.is_a?(ActiveRecord::RecordInvalid)
+
+        :internal_server_error
       end
     end
   end

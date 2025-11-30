@@ -242,5 +242,16 @@ RSpec.describe BetterController::Utils::Logging do
       expect(output).to include('Message')
       expect(output).to include('custom')
     end
+
+    it 'logs plain message when no tags provided' do
+      simple_class.better_controller_logger = test_logger
+      instance = simple_class.new
+      instance.log_info('Plain message')
+
+      log_output.rewind
+      output = log_output.read
+
+      expect(output).to include('Plain message')
+    end
   end
 end

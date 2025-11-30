@@ -22,12 +22,15 @@ RSpec.describe BetterController::Controllers::ResponseHelpers do
 
   let(:controller) { controller_class.new }
 
+  before { BetterController.reset_config! }
+  after { BetterController.reset_config! }
+
   describe '#respond_with_success' do
-    it 'returns success response with data' do
+    it 'returns success response with data and meta containing version' do
       controller.respond_with_success({ id: 1, name: 'Test' })
 
-      expect(controller.rendered[:json][:success]).to be true
       expect(controller.rendered[:json][:data]).to eq({ id: 1, name: 'Test' })
+      expect(controller.rendered[:json][:meta]).to include(version: 'v1')
     end
 
     it 'uses :ok status by default' do
@@ -42,17 +45,25 @@ RSpec.describe BetterController::Controllers::ResponseHelpers do
       expect(controller.rendered[:status]).to eq(:created)
     end
 
-    it 'merges additional options' do
-      controller.respond_with_success('data', options: { meta: { count: 5 } })
+    it 'merges additional meta' do
+      controller.respond_with_success('data', meta: { count: 5 })
 
-      expect(controller.rendered[:json][:meta]).to eq({ count: 5 })
+      expect(controller.rendered[:json][:meta][:count]).to eq(5)
+      expect(controller.rendered[:json][:meta][:version]).to eq('v1')
     end
 
     it 'handles nil data' do
       controller.respond_with_success(nil)
 
-      expect(controller.rendered[:json][:success]).to be true
       expect(controller.rendered[:json][:data]).to be_nil
+      expect(controller.rendered[:json][:meta][:version]).to eq('v1')
+    end
+
+    it 'uses custom api_version from configuration' do
+      BetterController.config.api_version = 'v2'
+      controller.respond_with_success('data')
+
+      expect(controller.rendered[:json][:meta][:version]).to eq('v2')
     end
 
     context 'without render method' do
@@ -66,17 +77,18 @@ RSpec.describe BetterController::Controllers::ResponseHelpers do
         instance = plain_class.new
         result = instance.respond_with_success({ id: 1 })
 
-        expect(result).to eq({ success: true, data: { id: 1 } })
+        expect(result[:data]).to eq({ id: 1 })
+        expect(result[:meta][:version]).to eq('v1')
       end
     end
   end
 
   describe '#respond_with_error' do
-    it 'returns error response with message' do
+    it 'returns error response with data containing error and meta' do
       controller.respond_with_error('Something went wrong')
 
-      expect(controller.rendered[:json][:success]).to be false
-      expect(controller.rendered[:json][:error][:message]).to eq('Something went wrong')
+      expect(controller.rendered[:json][:data][:error][:message]).to eq('Something went wrong')
+      expect(controller.rendered[:json][:meta][:version]).to eq('v1')
     end
 
     it 'uses :unprocessable_entity status by default' do
@@ -95,21 +107,29 @@ RSpec.describe BetterController::Controllers::ResponseHelpers do
       error = StandardError.new('Test error')
       controller.respond_with_error(error)
 
-      expect(controller.rendered[:json][:error][:type]).to eq('StandardError')
-      expect(controller.rendered[:json][:error][:message]).to eq('Test error')
+      expect(controller.rendered[:json][:data][:error][:type]).to eq('StandardError')
+      expect(controller.rendered[:json][:data][:error][:message]).to eq('Test error')
     end
 
     it 'handles custom exception classes' do
       error = ArgumentError.new('Invalid argument')
       controller.respond_with_error(error)
 
-      expect(controller.rendered[:json][:error][:type]).to eq('ArgumentError')
+      expect(controller.rendered[:json][:data][:error][:type]).to eq('ArgumentError')
+      expect(controller.rendered[:json][:data][:error][:message]).to eq('Invalid argument')
     end
 
-    it 'merges additional options' do
-      controller.respond_with_error('Error', options: { code: 'ERR_001' })
+    it 'handles Hash errors' do
+      controller.respond_with_error({ code: 'ERR_001', message: 'Custom error' })
 
-      expect(controller.rendered[:json][:code]).to eq('ERR_001')
+      expect(controller.rendered[:json][:data][:error]).to eq({ code: 'ERR_001', message: 'Custom error' })
+    end
+
+    it 'merges additional meta' do
+      controller.respond_with_error('Error', meta: { request_id: 'abc123' })
+
+      expect(controller.rendered[:json][:meta][:request_id]).to eq('abc123')
+      expect(controller.rendered[:json][:meta][:version]).to eq('v1')
     end
 
     context 'without render method' do
@@ -123,100 +143,75 @@ RSpec.describe BetterController::Controllers::ResponseHelpers do
         instance = plain_class.new
         result = instance.respond_with_error('Failed')
 
-        expect(result[:success]).to be false
-        expect(result[:error][:message]).to eq('Failed')
+        expect(result[:data][:error][:message]).to eq('Failed')
+        expect(result[:meta][:version]).to eq('v1')
+      end
+    end
+
+    context 'with ActiveModel-like errors' do
+      let(:errors_object) do
+        obj = Object.new
+        def obj.full_messages
+          ['Name is required', 'Email is invalid']
+        end
+
+        def obj.to_hash
+          { name: ['is required'], email: ['is invalid'] }
+        end
+        obj
+      end
+
+      it 'formats ActiveModel-like errors' do
+        controller.respond_with_error(errors_object)
+
+        error = controller.rendered[:json][:data][:error]
+        expect(error[:messages]).to eq(['Name is required', 'Email is invalid'])
+        expect(error[:details]).to eq({ name: ['is required'], email: ['is invalid'] })
       end
     end
   end
 
-  describe '#respond_with_pagination' do
-    let(:paginated_collection) do
-      collection = [1, 2, 3, 4, 5]
+  describe '#build_response (private)' do
+    it 'builds standard response structure' do
+      response = controller.send(:build_response, { id: 1 }, { extra: 'info' })
 
-      # Add pagination methods
-      def collection.page(num)
-        @page = num
-        self
-      end
+      expect(response[:data]).to eq({ id: 1 })
+      expect(response[:meta][:version]).to eq('v1')
+      expect(response[:meta][:extra]).to eq('info')
+    end
+  end
 
-      def collection.per(num)
-        @per = num
-        self
-      end
+  describe '#format_error (private)' do
+    it 'formats Exception' do
+      error = StandardError.new('Test')
+      result = controller.send(:format_error, error)
 
-      def collection.current_page
-        @page || 1
-      end
-
-      def collection.total_pages
-        2
-      end
-
-      def collection.total_count
-        10
-      end
-
-      collection
+      expect(result).to eq({ type: 'StandardError', message: 'Test' })
     end
 
-    it 'returns paginated response with metadata' do
-      controller.respond_with_pagination(paginated_collection, page: 1, per_page: 5)
+    it 'formats String' do
+      result = controller.send(:format_error, 'Error message')
 
-      expect(controller.rendered[:json][:success]).to be true
-      expect(controller.rendered[:json][:meta][:pagination]).to include(
-        :current_page,
-        :total_pages,
-        :total_count
-      )
+      expect(result).to eq({ message: 'Error message' })
     end
 
-    it 'uses default pagination values' do
-      controller.respond_with_pagination(paginated_collection)
+    it 'formats Hash' do
+      result = controller.send(:format_error, { code: 'E001' })
 
-      expect(controller.rendered[:json][:meta][:pagination][:current_page]).to eq(1)
+      expect(result).to eq({ code: 'E001' })
     end
 
-    it 'uses provided page number' do
-      collection = paginated_collection
+    it 'formats object with to_hash' do
+      obj = OpenStruct.new(to_hash: { field: ['error'] })
+      result = controller.send(:format_error, obj)
 
-      def collection.page(num)
-        @page = num
-        self
-      end
-
-      controller.respond_with_pagination(collection, page: 2)
-
-      expect(controller.rendered[:json][:meta][:pagination][:current_page]).to eq(2)
+      expect(result).to eq({ field: ['error'] })
     end
 
-    it 'uses provided per_page value' do
-      collection = paginated_collection
-      pages_received = nil
+    it 'formats unknown object as string' do
+      result = controller.send(:format_error, 12_345)
 
-      def collection.per(num)
-        @per_value = num
-        self
-      end
-
-      def collection.per_value
-        @per_value
-      end
-
-      controller.respond_with_pagination(collection, per_page: 10)
-      # The per method was called - we verify pagination works
-      expect(controller.rendered[:json][:success]).to be true
-    end
-
-    it 'includes total_pages in metadata' do
-      controller.respond_with_pagination(paginated_collection)
-
-      expect(controller.rendered[:json][:meta][:pagination][:total_pages]).to eq(2)
-    end
-
-    it 'includes total_count in metadata' do
-      controller.respond_with_pagination(paginated_collection)
-
-      expect(controller.rendered[:json][:meta][:pagination][:total_count]).to eq(10)
+      expect(result).to eq({ message: '12345' })
     end
   end
 end

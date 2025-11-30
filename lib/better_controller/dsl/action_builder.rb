@@ -50,12 +50,6 @@ module BetterController
         @config[:page_config_modifier] = block
       end
 
-      # Define the Turbo Frame ID for this action
-      # @param frame_id [Symbol, String] Frame ID
-      def turbo_frame(frame_id)
-        @config[:turbo_frame] = frame_id
-      end
-
       # Define params key for strong parameters
       # @param key [Symbol] Params key (e.g., :user, :post)
       def params_key(key)

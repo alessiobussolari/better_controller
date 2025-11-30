@@ -367,5 +367,170 @@ RSpec.describe BetterController::Controllers::Concerns::ServiceResponder do
 
       expect(streams.first[:action]).to eq(:remove)
     end
+
+    it 'returns empty array for unknown action' do
+      result = { action: :unknown, resource: resource }
+      streams = controller.send(:build_resource_streams, result)
+
+      expect(streams).to eq([])
+    end
+  end
+
+  describe '#handle_html_service_success with block' do
+    it 'yields to block when given' do
+      result = { success: true, message: 'Success!' }
+      yielded = false
+
+      controller.send(:handle_html_service_success, result, nil) do
+        yielded = true
+      end
+
+      expect(yielded).to be true
+    end
+  end
+
+  describe '#handle_turbo_service_success with block' do
+    it 'yields to block when given' do
+      result = { success: true }
+      yielded = false
+
+      controller.send(:handle_turbo_service_success, result) do
+        yielded = true
+      end
+
+      expect(yielded).to be true
+    end
+  end
+
+  describe '#handle_json_service_success with block' do
+    it 'yields to block when given' do
+      result = { success: true }
+      yielded = false
+
+      controller.send(:handle_json_service_success, result) do
+        yielded = true
+      end
+
+      expect(yielded).to be true
+    end
+  end
+
+  describe '#handle_html_service_error' do
+    let(:result) { { success: false, error: 'Error' } }
+
+    it 'yields to block when given' do
+      yielded = false
+
+      controller.send(:handle_html_service_error, result, nil) do
+        yielded = true
+      end
+
+      expect(yielded).to be true
+    end
+
+    it 'redirects to redirect_to from result' do
+      result[:redirect_to] = '/error-page'
+      controller.send(:handle_html_service_error, result, nil)
+
+      expect(controller.redirected_to[:path]).to eq('/error-page')
+    end
+
+    it 'redirects to failure_path when provided' do
+      controller.send(:handle_html_service_error, result, '/failure')
+
+      expect(controller.redirected_to[:path]).to eq('/failure')
+    end
+
+    it 'renders page_config with unprocessable_entity when present' do
+      result[:page_config] = { type: :edit }
+      controller.send(:handle_html_service_error, result, nil)
+
+      expect(controller.rendered[:status]).to eq(:unprocessable_entity)
+    end
+  end
+
+  describe '#handle_turbo_service_error' do
+    let(:result) { { success: false, error: 'Error' } }
+
+    it 'yields to block when given' do
+      yielded = false
+
+      controller.send(:handle_turbo_service_error, result) do
+        yielded = true
+      end
+
+      expect(yielded).to be true
+    end
+
+    it 'renders turbo_streams from result when provided' do
+      streams = [{ action: :remove, target: :item }]
+      result[:turbo_streams] = streams
+      controller.send(:handle_turbo_service_error, result)
+
+      expect(controller.rendered[:turbo_stream]).to eq(streams)
+    end
+  end
+
+  describe '#handle_json_service_error with block' do
+    it 'yields to block when given' do
+      result = { success: false, error: 'Error' }
+      yielded = false
+
+      controller.send(:handle_json_service_error, result) do
+        yielded = true
+      end
+
+      expect(yielded).to be true
+    end
+  end
+
+  describe '#render_turbo_success with resource' do
+    let(:resource) do
+      OpenStruct.new(id: 1).tap do |r|
+        def r.class
+          OpenStruct.new(name: 'User')
+        end
+      end
+    end
+
+    it 'includes resource streams for create action' do
+      result = { action: :create, resource: resource }
+      controller.send(:render_turbo_success, result)
+
+      streams = controller.rendered[:turbo_stream]
+      expect(streams.length).to be >= 2
+    end
+  end
+
+  describe '#render_turbo_error' do
+    let(:resource) do
+      OpenStruct.new(id: 1, errors: ['Name is required']).tap do |r|
+        def r.class
+          OpenStruct.new(name: 'User')
+        end
+
+        def r.respond_to?(method, *)
+          method == :errors || super
+        end
+      end
+    end
+
+    it 'includes form errors stream when errors present' do
+      result = { errors: { name: ["can't be blank"] } }
+      controller.send(:render_turbo_error, result)
+
+      streams = controller.rendered[:turbo_stream]
+      form_errors_stream = streams.find { |s| s[:target] == 'form_errors' }
+
+      expect(form_errors_stream).to be_present
+    end
+
+    it 'includes form replacement when resource has errors' do
+      result = { resource: resource }
+      controller.send(:render_turbo_error, result)
+
+      streams = controller.rendered[:turbo_stream]
+      expect(streams.any? { |s| s[:action] == :replace }).to be true
+    end
   end
 end

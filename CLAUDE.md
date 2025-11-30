@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BetterController is a Ruby gem that provides standardized, maintainable Rails controller patterns with built-in service layer, serialization, pagination, and error handling.
+BetterController is a Ruby gem that provides standardized, maintainable Rails controller patterns with declarative DSL, Hotwire/Turbo support, ViewComponent integration, pagination, and error handling.
+
+**Note:** BetterController is BYOS (Bring Your Own Services/Serializers). It does NOT provide built-in services or serializers - use your preferred patterns (Interactor, Trailblazer, PORO, ActiveModel::Serializers, Blueprinter, JBuilder, etc.).
 
 ## Commands
 
@@ -12,8 +14,11 @@ BetterController is a Ruby gem that provides standardized, maintainable Rails co
 # Install dependencies
 bundle install
 
-# Run tests
-bundle exec rspec
+# Run unit tests
+bundle exec rspec spec/better_controller
+
+# Run integration tests (require Rails)
+INTEGRATION_TESTS=true bundle exec rspec spec/integration spec/generators
 
 # Run a single test file
 bundle exec rspec spec/better_controller/resources_controller_spec.rb
@@ -41,7 +46,7 @@ bundle exec rake install
 
 ### Core Module Structure
 
-The gem is organized into four main namespaces under `lib/better_controller/`:
+The gem is organized under `lib/better_controller/`:
 
 - **Controllers** - Controller mixins and helpers
   - `ResourcesController` - RESTful CRUD actions (index, show, create, update, destroy)
@@ -49,13 +54,15 @@ The gem is organized into four main namespaces under `lib/better_controller/`:
   - `ResponseHelpers` - `respond_with_success` and `respond_with_error` methods
   - `ActionHelpers` - Class-level controller configuration
 
-- **Services** - Business logic layer
-  - `Service` - Base class with `all`, `find`, `create`, `update`, `destroy` methods
-  - Services use ancestry parameters for nested resource support
+- **DSL** - Declarative action definition
+  - `ActionDsl` - Define actions with `action :name do ... end`
+  - `ActionBuilder` - Build action configurations
+  - `ResponseBuilder` - Build response handlers
+  - `TurboStreamBuilder` - Build Turbo Stream responses
 
-- **Serializers** - JSON serialization
-  - `Serializer` module with DSL: `attributes`, `methods`, `associations`
-  - Handles both single resources and collections automatically
+- **Rendering** - View rendering utilities
+  - `PageConfigRenderer` - Render ViewComponents based on page_config
+  - `ComponentRenderer` - Direct ViewComponent rendering
 
 - **Utils** - Shared utilities
   - `Pagination` - Kaminari-based pagination with metadata
@@ -77,20 +84,20 @@ end
 class UsersController < ApplicationController
   include BetterController::Controllers::ResourcesController
 
-  # Must implement:
-  def resource_service_class; UserService; end
-  def resource_params_root_key; :user; end
-end
-```
+  private
 
-**Service classes** must implement `resource_class` method returning the ActiveRecord model.
+  def resource_class
+    User
+  end
 
-**Serializers** use class-level DSL:
-```ruby
-class UserSerializer
-  include BetterController::Serializers::Serializer
-  attributes :id, :name, :email
-  methods :full_name
+  def resource_params
+    params.require(:user).permit(:name, :email)
+  end
+
+  # Optional: customize serialization
+  def serialize_resource(resource)
+    resource.as_json(only: [:id, :name, :email])
+  end
 end
 ```
 
@@ -100,16 +107,17 @@ All API responses follow a consistent structure:
 ```json
 {
   "data": { ... },
-  "message": "...",
-  "meta": { "pagination": { ... } }
+  "meta": { "version": "v1" }
 }
 ```
+
+The version is configurable via `BetterController.config.api_version`.
 
 ### Generators
 
 ```bash
 rails generate better_controller:install           # Create initializer
-rails generate better_controller:controller Users  # Generate controller + service + serializer
+rails generate better_controller:controller Users  # Generate controller
 ```
 
 ## Dependencies
@@ -118,3 +126,5 @@ rails generate better_controller:controller Users  # Generate controller + servi
 - Rails >= 6.0 (actionpack, activesupport)
 - Kaminari for pagination
 - Zeitwerk for autoloading
+- Optional: turbo-rails >= 1.0
+- Optional: view_component >= 3.0

@@ -3,263 +3,162 @@
 module BetterController
   module Controllers
     # Module providing standardized RESTful resource controller functionality
+    #
+    # This module provides CRUD helpers that work with any ActiveRecord model.
+    # It does NOT include services or serializers - those are the user's responsibility.
+    #
+    # @example Basic usage
+    #   class UsersController < ApplicationController
+    #     include BetterController::Controllers::ResourcesController
+    #
+    #     private
+    #
+    #     def resource_class
+    #       User
+    #     end
+    #
+    #     def resource_params
+    #       params.require(:user).permit(:name, :email)
+    #     end
+    #   end
+    #
     module ResourcesController
       extend ActiveSupport::Concern
 
       included do
-        # Include the base BetterController modules
         include BetterController::Controllers::Base
         include BetterController::Controllers::ResponseHelpers
         include BetterController::Utils::ParameterValidation
-        include BetterController::Utils::Pagination
-
-      # Configure default pagination
-      configure_pagination enabled: true, per_page: 25
-    end
-
-    # Index action to list all resources
-    def index
-      execute_action do
-        collection = resource_collection_resolver
-
-        # Apply pagination if enabled
-        if self.class.pagination_options[:enabled] && collection.respond_to?(:page)
-          @resource_collection = paginate(collection,
-                                          page:     params[:page],
-                                          per_page: params[:per_page] || self.class.pagination_options[:per_page])
-        else
-          @resource_collection = collection
-        end
-
-        data = serialize_resource(@resource_collection, index_serializer)
-        respond_with_success(data, options: { meta: meta })
+        include BetterController::Utils::Logging
       end
-    end
 
-    # Show action to display a specific resource
-    def show
-      execute_action do
-        @resource = resource_finder
-
-        data = serialize_resource(@resource, show_serializer)
-        respond_with_success(data, options: { meta: meta })
-      end
-    end
-
-    # Create action to create a new resource
-    def create
-      execute_action do
-        @resource = resource_creator
-
-        if @resource.errors.any?
-          respond_with_error(@resource.errors, status: :unprocessable_entity)
-        else
-          data = serialize_resource(@resource, create_serializer)
-          respond_with_success(data, status: :created, options: {
-                                 message: create_message,
-                                 meta:    meta,
-                               })
+      # Index action to list all resources
+      def index
+        execute_action do
+          @resources = resource_scope.all
+          respond_with_success(serialize_collection(@resources), meta: index_meta)
         end
       end
-    end
 
-    # Update action to update an existing resource
-    def update
-      execute_action do
-        @resource = resource_updater
-
-        if @resource.errors.any?
-          respond_with_error(@resource.errors, status: :unprocessable_entity)
-        else
-          data = serialize_resource(@resource, update_serializer)
-          respond_with_success(data, options: {
-                                 message: update_message,
-                                 meta:    meta,
-                               })
+      # Show action to display a specific resource
+      def show
+        execute_action do
+          @resource = find_resource
+          respond_with_success(serialize_resource(@resource), meta: show_meta)
         end
       end
-    end
 
-    # Destroy action to delete a resource
-    def destroy
-      execute_action do
-        @resource = resource_destroyer
+      # Create action to create a new resource
+      def create
+        execute_action do
+          @resource = resource_scope.new(resource_params)
 
-        if @resource.errors.any?
-          respond_with_error(@resource.errors, status: :unprocessable_entity)
-        else
-          data = serialize_resource(@resource, destroy_serializer)
-          respond_with_success(data, options: {
-                                 message: destroy_message,
-                                 meta:    meta,
-                               })
+          if @resource.save
+            respond_with_success(serialize_resource(@resource), status: :created, meta: create_meta)
+          else
+            respond_with_error(@resource.errors, status: :unprocessable_entity)
+          end
         end
       end
+
+      # Update action to update an existing resource
+      def update
+        execute_action do
+          @resource = find_resource
+
+          if @resource.update(resource_params)
+            respond_with_success(serialize_resource(@resource), meta: update_meta)
+          else
+            respond_with_error(@resource.errors, status: :unprocessable_entity)
+          end
+        end
+      end
+
+      # Destroy action to delete a resource
+      def destroy
+        execute_action do
+          @resource = find_resource
+
+          if @resource.destroy
+            respond_with_success(serialize_resource(@resource), meta: destroy_meta)
+          else
+            respond_with_error(@resource.errors, status: :unprocessable_entity)
+          end
+        end
+      end
+
+      protected
+
+      # Find a resource by id
+      # @return [ActiveRecord::Base] The resource
+      def find_resource
+        resource_scope.find(params[:id])
+      end
+
+      # Get the base scope for resources
+      # Override this method for nested resources or custom scopes
+      # @return [ActiveRecord::Relation] The resource scope
+      def resource_scope
+        resource_class.all
+      end
+
+      # Get the resource class
+      # @return [Class] The ActiveRecord model class
+      def resource_class
+        raise NotImplementedError, "#{self.class.name} must implement #{__method__}"
+      end
+
+      # Get the resource parameters
+      # @return [ActionController::Parameters] The permitted parameters
+      def resource_params
+        raise NotImplementedError, "#{self.class.name} must implement #{__method__}"
+      end
+
+      # Serialize a single resource
+      # Override this method to use your preferred serializer
+      # @param resource [ActiveRecord::Base] The resource to serialize
+      # @return [Hash] The serialized resource
+      def serialize_resource(resource)
+        resource.as_json
+      end
+
+      # Serialize a collection of resources
+      # Override this method to use your preferred serializer
+      # @param collection [ActiveRecord::Relation] The collection to serialize
+      # @return [Array<Hash>] The serialized collection
+      def serialize_collection(collection)
+        collection.map { |r| serialize_resource(r) }
+      end
+
+      # Get additional metadata for index action
+      # @return [Hash] The metadata
+      def index_meta
+        {}
+      end
+
+      # Get additional metadata for show action
+      # @return [Hash] The metadata
+      def show_meta
+        {}
+      end
+
+      # Get additional metadata for create action
+      # @return [Hash] The metadata
+      def create_meta
+        {}
+      end
+
+      # Get additional metadata for update action
+      # @return [Hash] The metadata
+      def update_meta
+        {}
+      end
+
+      # Get additional metadata for destroy action
+      # @return [Hash] The metadata
+      def destroy_meta
+        {}
+      end
     end
-
-    protected
-
-    # Serialize a resource using the specified serializer
-    # @param resource [Object] The resource to serialize
-    # @param serializer_class [Class] The serializer class
-    # @return [Hash, Array<Hash>] The serialized resource
-    def serialize_resource(resource, serializer_class)
-      return resource unless serializer_class && defined?(serializer_class)
-
-      serializer = serializer_class.new
-      serializer.serialize(resource, serialization_options)
-    end
-
-    # Get serialization options
-    # @return [Hash] The serialization options
-    def serialization_options
-      {}
-    end
-
-    # Get the serializer for index action
-    # @return [Class] The serializer class
-    def index_serializer
-      resource_serializer
-    end
-
-    # Get the serializer for show action
-    # @return [Class] The serializer class
-    def show_serializer
-      resource_serializer
-    end
-
-    # Get the serializer for create action
-    # @return [Class] The serializer class
-    def create_serializer
-      resource_serializer
-    end
-
-    # Get the serializer for update action
-    # @return [Class] The serializer class
-    def update_serializer
-      resource_serializer
-    end
-
-    # Get the serializer for destroy action
-    # @return [Class] The serializer class
-    def destroy_serializer
-      resource_serializer
-    end
-
-    # Get the resource serializer class
-    # @return [Class] The serializer class
-    def resource_serializer
-      nil
-    end
-
-    # Add metadata to the response
-    # @param key [Symbol] The metadata key
-    # @param value [Object] The metadata value
-    def add_meta(key, value)
-      meta[key] = value
-    end
-
-    # Get the metadata hash
-    # @return [Hash] The metadata
-    def meta
-      @meta ||= {}
-    end
-
-    # Get the resource service
-    # @return [Object] The resource service
-    def resource_service
-      resource_service_class.new
-    end
-
-    # Get the resource service class
-    # @return [Class] The resource service class
-    def resource_service_class
-      raise NotImplementedError, "#{self.class.name} must implement #{__method__}"
-    end
-
-    # Get the root key for resource parameters
-    # @return [Symbol] The root key
-    def resource_params_root_key
-      raise NotImplementedError, "#{self.class.name} must implement #{__method__}"
-    end
-
-    # Get the message for create action
-    # @return [String, nil] The message
-    def create_message
-      nil
-    end
-
-    # Get the message for update action
-    # @return [String, nil] The message
-    def update_message
-      nil
-    end
-
-    # Get the message for destroy action
-    # @return [String, nil] The message
-    def destroy_message
-      nil
-    end
-
-    # Get the resource parameters
-    # @return [Hash] The resource parameters
-    def resource_params
-      @resource_params ||= params.require(resource_params_root_key).permit!
-    end
-
-    # Resolve the resource collection
-    # @return [Object] The resource collection
-    def resource_collection_resolver
-      resource_service.all(ancestry_key_params)
-    end
-
-    # Find a specific resource
-    # @return [Object] The resource
-    def resource_finder
-      resource_service.find(ancestry_key_params, resource_key_param)
-    end
-
-    # Create a new resource
-    # @return [Object] The created resource
-    def resource_creator
-      resource_service.create(ancestry_key_params, resource_create_params)
-    end
-
-    # Update an existing resource
-    # @return [Object] The updated resource
-    def resource_updater
-      resource_service.update(ancestry_key_params, resource_key_param, resource_update_params)
-    end
-
-    # Destroy a resource
-    # @return [Object] The destroyed resource
-    def resource_destroyer
-      resource_service.destroy(ancestry_key_params, resource_key_param)
-    end
-
-    # Get the resource key parameter
-    # @return [String, Integer] The resource key
-    def resource_key_param
-      params[:id]
-    end
-
-    # Get the ancestry key parameters
-    # @return [Hash] The ancestry key parameters
-    def ancestry_key_params
-      {}
-    end
-
-    # Get the parameters for creating a resource
-    # @return [Hash] The create parameters
-    def resource_create_params
-      resource_params
-    end
-
-    # Get the parameters for updating a resource
-    # @return [Hash] The update parameters
-    def resource_update_params
-      resource_params
-    end
-  end
   end
 end

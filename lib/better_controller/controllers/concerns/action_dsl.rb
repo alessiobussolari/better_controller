@@ -79,7 +79,8 @@ module BetterController
 
           # Execute service if defined
           if config[:service]
-            @result = execute_service(config)
+            raw_result = execute_service(config)
+            @result = unwrap_result(raw_result)
           end
 
           # Resolve page_config
@@ -122,6 +123,26 @@ module BetterController
           { success: false, error: e.message, exception: e }
         end
 
+        # Unwrap result if it's a wrapped response (e.g., BetterService::Result)
+        # @param result [Object] Raw service result
+        # @return [Hash] Normalized hash result
+        def unwrap_result(result)
+          wrapper_class = BetterController.configuration.wrapped_responses_class
+
+          return result if result.is_a?(Hash)
+          return result unless wrapper_class && result.is_a?(wrapper_class)
+
+          # Unwrap BetterService::Result or compatible wrapper
+          {
+            resource: result.resource,
+            collection: result.resource.is_a?(Enumerable) && !result.resource.is_a?(String) ? result.resource : nil,
+            success: result.success?,
+            errors: result.respond_to?(:validation_errors) ? result.validation_errors : nil,
+            error_type: result.meta&.dig(:error_type),
+            message: result.respond_to?(:message) ? result.message : nil
+          }.merge(result.meta || {})
+        end
+
         # Build service instance
         # @param service_class [Class] Service class
         # @param params [Hash] Service params
@@ -140,9 +161,12 @@ module BetterController
         # @param config [Hash] Action configuration
         # @return [Hash] Service params
         def build_service_params(config)
-          result = { params: action_params(config) }
-          result[:id] = params[:id] if params[:id].present?
-          result
+          action_prms = action_params(config)
+          # Include id in params hash if present, for services that expect it
+          if params[:id].present?
+            action_prms = action_prms.respond_to?(:merge) ? action_prms.merge(id: params[:id]) : action_prms.to_h.merge(id: params[:id])
+          end
+          { params: action_prms }
         end
 
         # Get action params (strong parameters)
@@ -159,7 +183,11 @@ module BetterController
           elsif params[params_key].present?
             params[params_key]
           else
-            params
+            # Return params without Rails internal keys (controller, action, format, etc.)
+            # Keep :id as it's needed by services for show/edit/update/destroy
+            filtered_params = params.except(:controller, :action, :format)
+            filtered_params.permit! if filtered_params.respond_to?(:permit!)
+            filtered_params.to_h.except('controller', 'action', 'format')
           end
         end
 
@@ -218,9 +246,15 @@ module BetterController
         # @return [Boolean] Whether the action succeeded
         def action_successful?(result)
           return false if @error.present?
-          return result[:success] if result&.key?(:success)
 
-          true
+          # Support both Hash with :success key and objects with success? method
+          if result.respond_to?(:success?)
+            result.success?
+          elsif result&.key?(:success)
+            result[:success]
+          else
+            true
+          end
         end
 
         # Classify error type
@@ -229,18 +263,27 @@ module BetterController
         def classify_error(error)
           error_class = error.class.name
 
+          # Not Found errors
           if error_class == 'ActiveRecord::RecordNotFound' ||
-             (defined?(ActiveRecord::RecordNotFound) && error.is_a?(ActiveRecord::RecordNotFound))
+             error_class == 'BetterService::Errors::Runtime::ResourceNotFoundError' ||
+             (defined?(ActiveRecord::RecordNotFound) && error.is_a?(ActiveRecord::RecordNotFound)) ||
+             (defined?(BetterService::Errors::Runtime::ResourceNotFoundError) && error.is_a?(BetterService::Errors::Runtime::ResourceNotFoundError))
             :not_found
+          # Validation errors
           elsif error_class == 'ActiveRecord::RecordInvalid' ||
                 error_class == 'ActiveModel::ValidationError' ||
+                error_class == 'BetterService::Errors::Runtime::ValidationError' ||
                 (defined?(ActiveRecord::RecordInvalid) && error.is_a?(ActiveRecord::RecordInvalid)) ||
-                (defined?(ActiveModel::ValidationError) && error.is_a?(ActiveModel::ValidationError))
+                (defined?(ActiveModel::ValidationError) && error.is_a?(ActiveModel::ValidationError)) ||
+                (defined?(BetterService::Errors::Runtime::ValidationError) && error.is_a?(BetterService::Errors::Runtime::ValidationError))
             :validation
+          # Authorization errors
           elsif error_class == 'Pundit::NotAuthorizedError' ||
                 error_class == 'CanCan::AccessDenied' ||
+                error_class == 'BetterService::Errors::Runtime::AuthorizationError' ||
                 (defined?(Pundit::NotAuthorizedError) && error.is_a?(Pundit::NotAuthorizedError)) ||
-                (defined?(CanCan::AccessDenied) && error.is_a?(CanCan::AccessDenied))
+                (defined?(CanCan::AccessDenied) && error.is_a?(CanCan::AccessDenied)) ||
+                (defined?(BetterService::Errors::Runtime::AuthorizationError) && error.is_a?(BetterService::Errors::Runtime::AuthorizationError))
             :authorization
           else
             :any
@@ -268,6 +311,8 @@ module BetterController
             format.html { handle_html_success(config, handlers) }
             format.turbo_stream { handle_turbo_stream_success(config, handlers) }
             format.json { handle_json_success(config, handlers) }
+            format.csv { handle_csv_success(config, handlers) }
+            format.xml { handle_xml_success(config, handlers) }
           end
         end
 
@@ -310,6 +355,32 @@ module BetterController
           end
         end
 
+        # Handle CSV success response
+        # @param config [Hash] Action configuration
+        # @param handlers [Hash] Response handlers
+        def handle_csv_success(_config, handlers)
+          if handlers[:csv]
+            instance_exec(&handlers[:csv])
+          else
+            # Default: serialize collection as CSV
+            collection = @result&.dig(:collection) || [@result&.dig(:resource)].compact
+            send_csv(collection) if collection.present?
+          end
+        end
+
+        # Handle XML success response
+        # @param config [Hash] Action configuration
+        # @param handlers [Hash] Response handlers
+        def handle_xml_success(_config, handlers)
+          if handlers[:xml]
+            instance_exec(&handlers[:xml])
+          else
+            # Default: serialize as XML
+            data = @result&.dig(:collection) || @result&.dig(:resource) || @result
+            render xml: data
+          end
+        end
+
         # Handle action error
         # @param config [Hash] Action configuration
         def handle_action_error(config)
@@ -322,6 +393,8 @@ module BetterController
             format.html { handle_html_error(config, handlers, error_type) }
             format.turbo_stream { handle_turbo_stream_error(config, handlers) }
             format.json { handle_json_error(config, handlers, error_type) }
+            format.csv { handle_csv_error(config, handlers, error_type) }
+            format.xml { handle_xml_error(config, handlers, error_type) }
           end
         end
 
@@ -329,7 +402,21 @@ module BetterController
         # @param result [Hash, nil] Service result
         # @return [Symbol] Error type
         def determine_error_type(result)
-          return :validation if result&.dig(:errors).present?
+          return :any unless result.is_a?(Hash)
+
+          # Check for BetterService error codes
+          error_code = result[:error_code]
+          case error_code
+          when :validation_error, :database_error
+            return :validation
+          when :authorization_error, :unauthorized
+            return :authorization
+          when :resource_not_found
+            return :not_found
+          end
+
+          # Check for validation errors (both :errors and :validation_errors keys)
+          return :validation if result[:errors].present? || result[:validation_errors].present?
 
           :any
         end
@@ -386,6 +473,43 @@ module BetterController
           end
         end
 
+        # Handle CSV error response
+        # @param config [Hash] Action configuration
+        # @param handlers [Hash] Response handlers
+        # @param error_type [Symbol] Error type
+        def handle_csv_error(_config, handlers, error_type)
+          if handlers[:csv]
+            instance_exec(@error, &handlers[:csv])
+          else
+            # CSV doesn't support structured errors well, return status only
+            head error_status(error_type)
+          end
+        end
+
+        # Handle XML error response
+        # @param config [Hash] Action configuration
+        # @param handlers [Hash] Response handlers
+        # @param error_type [Symbol] Error type
+        def handle_xml_error(_config, handlers, error_type)
+          if handlers[:xml]
+            instance_exec(@error, &handlers[:xml])
+          else
+            error_response = build_xml_error_response(@result, @error)
+            render xml: error_response, status: error_status(error_type)
+          end
+        end
+
+        # Build XML error response
+        # @param result [Hash, nil] Service result
+        # @param error [Exception, nil] Exception if any
+        # @return [Hash] XML-serializable error response
+        def build_xml_error_response(result, error)
+          response = { error: {} }
+          response[:error][:message] = error&.message || result&.dig(:error) || 'An error occurred'
+          response[:error][:errors] = result[:errors] if result&.dig(:errors).present?
+          response
+        end
+
         # Redirect to a configured path
         # @param redirect_config [Hash] Redirect configuration
         def redirect_to_path(redirect_config)
@@ -397,11 +521,15 @@ module BetterController
         end
 
         # Render page or component
+        # Automatically disables layout for Turbo Frame requests
         # @param config [Hash] Action configuration
         # @param status [Symbol] HTTP status
         def render_page_or_component(config, status: :ok)
+          # Auto-disable layout for Turbo Frame requests
+          layout_option = respond_to?(:turbo_frame_request?, true) && turbo_frame_request? ? false : nil
+
           if @page_config.present?
-            render_page_config(@page_config, status: status)
+            render_page_config(@page_config, status: status, layout: layout_option)
           elsif config[:component]
             render_configured_component(
               component: config[:component],
@@ -410,7 +538,9 @@ module BetterController
             )
           else
             # Default render (Rails convention)
-            render status: status
+            options = { status: status }
+            options[:layout] = layout_option unless layout_option.nil?
+            render(**options)
           end
         end
 
@@ -441,11 +571,14 @@ module BetterController
         # Render page_config with appropriate component
         # @param page_config [Hash] Page configuration
         # @param status [Symbol] HTTP status
-        def render_page_config(page_config, status: :ok)
+        # @param layout [Boolean, nil] Layout option (false for Turbo Frame requests)
+        def render_page_config(page_config, status: :ok, layout: nil)
           # This method should be overridden by rendering concern
           # Default: assign to instance variable and let Rails render
           @page_config = page_config
-          render status: status
+          options = { status: status }
+          options[:layout] = layout unless layout.nil?
+          render(**options)
         end
 
         # Build JSON response
@@ -510,8 +643,16 @@ module BetterController
         # Render Turbo Streams
         # @param streams [Array<Hash>] Stream configurations
         def render_turbo_streams(streams)
-          # This method should be overridden by TurboSupport concern
-          render turbo_stream: build_turbo_streams(streams)
+          built_streams = build_turbo_streams(streams)
+
+          # If built_streams contains strings (from turbo_stream helper),
+          # render them directly with the correct content type
+          if built_streams.all? { |s| s.is_a?(String) || s.respond_to?(:to_s) }
+            render plain: built_streams.join("\n"), content_type: 'text/vnd.turbo-stream.html'
+          else
+            # Use Rails' native turbo_stream rendering
+            render turbo_stream: built_streams
+          end
         end
 
         # Build Turbo Stream responses

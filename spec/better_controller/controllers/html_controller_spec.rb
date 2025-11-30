@@ -20,13 +20,16 @@ RSpec.describe BetterController::Controllers::HtmlController do
         @result = nil
       end
 
-      def render(component_or_options = nil, **options)
+      def render(component_or_options = nil, extra_options = {}, **options)
+        # Merge extra_options into options (for compatibility with Overrides#render signature)
+        all_options = extra_options.merge(options)
+
         if component_or_options.is_a?(Hash)
-          @rendered = component_or_options.merge(options)
+          @rendered = component_or_options.merge(all_options)
         elsif component_or_options
-          @rendered = { component: component_or_options, **options }
+          @rendered = { component: component_or_options, **all_options }
         else
-          @rendered = options
+          @rendered = all_options
         end
       end
 

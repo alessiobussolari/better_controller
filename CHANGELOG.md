@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.0] - 2025-11-30
+
+### Changed
+- **BREAKING: Removed Services module** - BetterController no longer provides built-in services. Use your preferred service pattern (Interactor, Trailblazer, simple PORO, etc.)
+- **BREAKING: Removed Serializers module** - BetterController no longer provides built-in serializers. Use your preferred serializer (ActiveModel::Serializers, Blueprinter, JBuilder, or `as_json`)
+- **BREAKING: New response format** - API responses now use `{data, meta: {version}}` format instead of `{success, data, message, meta}`
+- Response helpers now use `meta:` parameter instead of `options:`
+- Controller generator no longer creates service or serializer files
+
+### Added
+- `api_version` configuration option (default: 'v1') - automatically included in all API responses
+- ResourcesController now provides `serialize_resource` and `serialize_collection` methods that can be overridden
+
+### Removed
+- `BetterController::Services::Service` base class
+- `BetterController::Serializers::Serializer` module
+- Service generator template
+- Serializer generator template
+- `--skip-service` and `--skip-serializer` generator options
+
+### Fixed
+- Simplified ResourcesController to work directly with ActiveRecord models
+- Test coverage improved to 98%+ with 587 examples
+
 ## [0.2.0] - 2025-03-14
 
 ### Added

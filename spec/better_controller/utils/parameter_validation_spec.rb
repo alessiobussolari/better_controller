@@ -223,6 +223,25 @@ RSpec.describe BetterController::Utils::ParameterValidation do
       it 'registers a before_action' do
         expect(controller_with_callbacks.before_action_blocks[:create]).to be_a(Proc)
       end
+
+      it 'executes validation when before_action is called' do
+        instance = controller_with_callbacks.new
+        instance.params = { name: 'Test', email: 'test@example.com' }
+
+        # Execute the registered before_action block in instance context
+        result = instance.instance_eval(&controller_with_callbacks.before_action_blocks[:create])
+
+        expect(result).to be true
+      end
+
+      it 'raises error when required params are missing' do
+        instance = controller_with_callbacks.new
+        instance.params = { name: 'Test' }
+
+        expect do
+          instance.instance_eval(&controller_with_callbacks.before_action_blocks[:create])
+        end.to raise_error(BetterController::Error, /email/)
+      end
     end
 
     describe '.param_schema' do
@@ -254,6 +273,25 @@ RSpec.describe BetterController::Utils::ParameterValidation do
 
       it 'registers a before_action for schema validation' do
         expect(controller_with_schema.before_action_blocks[:update]).to be_a(Proc)
+      end
+
+      it 'executes schema validation when before_action is called' do
+        instance = controller_with_schema.new
+        instance.params = { name: 'Test', age: 25 }
+
+        # Execute the registered before_action block in instance context
+        result = instance.instance_eval(&controller_with_schema.before_action_blocks[:update])
+
+        expect(result).to be true
+      end
+
+      it 'raises error when schema validation fails' do
+        instance = controller_with_schema.new
+        instance.params = { age: 'invalid' }
+
+        expect do
+          instance.instance_eval(&controller_with_schema.before_action_blocks[:update])
+        end.to raise_error(BetterController::Error, /name is required/)
       end
     end
   end

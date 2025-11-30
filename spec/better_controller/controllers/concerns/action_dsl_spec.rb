@@ -50,12 +50,20 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         yield(FormatResponder.new(self))
       end
 
-      def render(options = {})
-        @rendered = options
+      def render(component_or_options = nil, options = {})
+        if component_or_options.is_a?(Hash)
+          @rendered = component_or_options
+        else
+          @rendered = options.merge(component: component_or_options)
+        end
       end
 
       def redirect_to(path, options = {})
         @redirected_to = { path: path, options: options }
+      end
+
+      def head(status)
+        @rendered = { head: status }
       end
 
       def render_to_string(content)
@@ -87,6 +95,14 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
     end
 
     def json
+      yield if block_given?
+    end
+
+    def csv
+      yield if block_given?
+    end
+
+    def xml
       yield if block_given?
     end
   end
@@ -173,9 +189,10 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
     end
 
     it 'executes the service and sets result' do
-      # Mock service to return a result
-      allow(ExampleService).to receive(:new).and_return(
-        double(call: { success: true, collection: [] })
+      # Mock service class method to return a result
+      # The action DSL uses class method if it responds to the method
+      allow(ExampleService).to receive(:call).and_return(
+        { success: true, collection: [] }
       )
 
       controller.send(:execute_registered_action, :index)
@@ -368,7 +385,7 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
 
       result = controller.send(:build_service_params, config)
 
-      expect(result[:id]).to eq(42)
+      expect(result[:params][:id]).to eq(42)
     end
   end
 
@@ -565,6 +582,519 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
       controller.send(:render_page_or_component, config, status: :created)
 
       expect(controller.rendered[:status]).to eq(:created)
+    end
+
+    context 'when turbo_frame_request? returns true' do
+      before do
+        allow(controller).to receive(:respond_to?).and_call_original
+        allow(controller).to receive(:respond_to?).with(:turbo_frame_request?, true).and_return(true)
+        controller.define_singleton_method(:turbo_frame_request?) { true }
+      end
+
+      it 'renders with layout: false for default render' do
+        controller.send(:render_page_or_component, {})
+
+        expect(controller.rendered[:layout]).to eq(false)
+      end
+
+      it 'renders with layout: false when page_config present' do
+        controller.instance_variable_set(:@page_config, { type: :index })
+        controller.send(:render_page_or_component, {})
+
+        expect(controller.rendered[:layout]).to eq(false)
+      end
+    end
+
+    context 'when turbo_frame_request? returns false' do
+      before do
+        allow(controller).to receive(:respond_to?).and_call_original
+        allow(controller).to receive(:respond_to?).with(:turbo_frame_request?, true).and_return(true)
+        controller.define_singleton_method(:turbo_frame_request?) { false }
+      end
+
+      it 'does not set layout option' do
+        controller.send(:render_page_or_component, {})
+
+        expect(controller.rendered).not_to have_key(:layout)
+      end
+    end
+
+    context 'when turbo_frame_request? is not available' do
+      before do
+        allow(controller).to receive(:respond_to?).and_call_original
+        allow(controller).to receive(:respond_to?).with(:turbo_frame_request?, true).and_return(false)
+      end
+
+      it 'does not set layout option' do
+        controller.send(:render_page_or_component, {})
+
+        expect(controller.rendered).not_to have_key(:layout)
+      end
+    end
+  end
+
+  describe '#handle_action_success' do
+    let(:config) { { on_success: {}, name: :create, error_handlers: {} } }
+
+    before do
+      controller.instance_variable_set(:@result, { success: true })
+    end
+
+    it 'calls set_success_flash' do
+      expect(controller).to receive(:set_success_flash).with(config)
+      controller.send(:handle_action_success, config)
+    end
+
+    it 'responds to html format' do
+      controller.send(:handle_action_success, config)
+      # Default render is called
+      expect(controller.rendered).to be_present
+    end
+  end
+
+  describe '#handle_html_success' do
+    let(:config) { { component: nil } }
+
+    context 'with redirect handler' do
+      it 'redirects to path' do
+        handlers = { redirect: { path: '/users', options: {} } }
+
+        controller.send(:handle_html_success, config, handlers)
+
+        expect(controller.redirected_to[:path]).to eq('/users')
+      end
+    end
+
+    context 'with html block handler' do
+      it 'executes the html block' do
+        called = false
+        handlers = { html: -> { called = true } }
+
+        controller.send(:handle_html_success, config, handlers)
+
+        expect(called).to be true
+      end
+    end
+
+    context 'with render_page handler' do
+      it 'renders page with status' do
+        handlers = { render_page: { status: :created } }
+
+        controller.send(:handle_html_success, config, handlers)
+
+        expect(controller.rendered[:status]).to eq(:created)
+      end
+    end
+
+    context 'with render_component handler' do
+      let(:component_class) do
+        Class.new do
+          def initialize(**args)
+            @args = args
+          end
+        end
+      end
+
+      it 'renders component' do
+        handlers = { render_component: { component: component_class, locals: {} } }
+
+        controller.send(:handle_html_success, config, handlers)
+
+        expect(controller.rendered).to be_present
+      end
+    end
+  end
+
+  describe '#handle_turbo_stream_success' do
+    let(:config) { {} }
+
+    context 'with custom turbo_stream handler' do
+      it 'renders custom turbo streams' do
+        handlers = { turbo_stream: [{ action: :update, target: :flash }] }
+
+        controller.send(:handle_turbo_stream_success, config, handlers)
+
+        expect(controller.rendered).to be_present
+      end
+    end
+
+    context 'without custom handler' do
+      it 'renders default turbo success' do
+        handlers = {}
+
+        controller.send(:handle_turbo_stream_success, config, handlers)
+
+        expect(controller.rendered).to be_present
+      end
+    end
+  end
+
+  describe '#handle_json_success' do
+    let(:config) { {} }
+
+    context 'with custom json handler' do
+      it 'executes the json block' do
+        called = false
+        handlers = { json: -> { called = true } }
+
+        controller.send(:handle_json_success, config, handlers)
+
+        expect(called).to be true
+      end
+    end
+
+    context 'without custom handler' do
+      it 'renders json response' do
+        controller.instance_variable_set(:@result, { success: true, data: 'test' })
+        handlers = {}
+
+        controller.send(:handle_json_success, config, handlers)
+
+        expect(controller.rendered[:json]).to eq({ success: true, data: 'test' })
+      end
+    end
+  end
+
+  describe '#handle_action_error' do
+    let(:config) { { name: :create, error_handlers: {} } }
+
+    before do
+      controller.instance_variable_set(:@result, { success: false, errors: { name: ["can't be blank"] } })
+    end
+
+    it 'calls set_error_flash' do
+      expect(controller).to receive(:set_error_flash).with(:validation, config)
+      controller.send(:handle_action_error, config)
+    end
+  end
+
+  describe '#handle_html_error' do
+    let(:config) { { component: nil } }
+
+    context 'with redirect handler' do
+      it 'redirects to path' do
+        handlers = { redirect: { path: '/users', options: {} } }
+
+        controller.send(:handle_html_error, config, handlers, :validation)
+
+        expect(controller.redirected_to[:path]).to eq('/users')
+      end
+    end
+
+    context 'with html block handler' do
+      it 'executes the html block with error' do
+        received_error = nil
+        error = StandardError.new('Test error')
+        controller.instance_variable_set(:@error, error)
+        handlers = { html: ->(e) { received_error = e } }
+
+        controller.send(:handle_html_error, config, handlers, :validation)
+
+        expect(received_error).to eq(error)
+      end
+    end
+
+    context 'with render_page handler' do
+      it 'renders page with custom status' do
+        handlers = { render_page: { status: :bad_request } }
+
+        controller.send(:handle_html_error, config, handlers, :validation)
+
+        expect(controller.rendered[:status]).to eq(:bad_request)
+      end
+
+      it 'uses error status when no custom status' do
+        handlers = { render_page: {} }
+
+        controller.send(:handle_html_error, config, handlers, :not_found)
+
+        expect(controller.rendered[:status]).to eq(:not_found)
+      end
+    end
+
+    context 'without handlers' do
+      it 'renders with error status' do
+        handlers = {}
+
+        controller.send(:handle_html_error, config, handlers, :validation)
+
+        expect(controller.rendered[:status]).to eq(:unprocessable_entity)
+      end
+    end
+  end
+
+  describe '#handle_turbo_stream_error' do
+    let(:config) { {} }
+
+    context 'with custom turbo_stream handler' do
+      it 'renders custom turbo streams' do
+        handlers = { turbo_stream: [{ action: :update, target: :errors }] }
+
+        controller.send(:handle_turbo_stream_error, config, handlers)
+
+        expect(controller.rendered).to be_present
+      end
+    end
+
+    context 'without custom handler' do
+      it 'renders default turbo error' do
+        handlers = {}
+        controller.instance_variable_set(:@result, { errors: { name: ["can't be blank"] } })
+
+        controller.send(:handle_turbo_stream_error, config, handlers)
+
+        expect(controller.rendered).to be_present
+      end
+    end
+  end
+
+  describe '#handle_json_error' do
+    let(:config) { {} }
+
+    context 'with custom json handler' do
+      it 'executes the json block with error' do
+        received_error = nil
+        error = StandardError.new('Test error')
+        controller.instance_variable_set(:@error, error)
+        handlers = { json: ->(e) { received_error = e } }
+
+        controller.send(:handle_json_error, config, handlers, :validation)
+
+        expect(received_error).to eq(error)
+      end
+    end
+
+    context 'without custom handler' do
+      it 'renders json error response with status' do
+        controller.instance_variable_set(:@result, { success: false })
+        controller.instance_variable_set(:@error, StandardError.new('Something failed'))
+        handlers = {}
+
+        controller.send(:handle_json_error, config, handlers, :not_found)
+
+        expect(controller.rendered[:json][:success]).to be false
+        expect(controller.rendered[:json][:error]).to eq('Something failed')
+        expect(controller.rendered[:status]).to eq(:not_found)
+      end
+    end
+  end
+
+  describe '#redirect_to_path' do
+    context 'with string path' do
+      it 'redirects to the path' do
+        config = { path: '/users/1', options: { notice: 'Success' } }
+
+        controller.send(:redirect_to_path, config)
+
+        expect(controller.redirected_to[:path]).to eq('/users/1')
+        expect(controller.redirected_to[:options]).to eq({ notice: 'Success' })
+      end
+    end
+
+    context 'with symbol path' do
+      it 'calls the method and redirects' do
+        controller.define_singleton_method(:users_path) { '/users' }
+        config = { path: :users_path, options: {} }
+
+        controller.send(:redirect_to_path, config)
+
+        expect(controller.redirected_to[:path]).to eq('/users')
+      end
+    end
+  end
+
+  describe '#set_success_flash' do
+    it 'sets flash notice when translation exists' do
+      allow(I18n).to receive(:t).and_call_original
+      allow(I18n).to receive(:t)
+        .with('flash.users.create.success', default: anything)
+        .and_return('User created successfully')
+
+      controller.send(:set_success_flash, { name: :create })
+
+      expect(controller.flash[:notice]).to eq('User created successfully')
+    end
+
+    it 'does nothing when translation is nil' do
+      allow(I18n).to receive(:t).and_return(nil)
+
+      controller.send(:set_success_flash, { name: :create })
+
+      expect(controller.flash[:notice]).to be_nil
+    end
+  end
+
+  describe '#set_error_flash' do
+    it 'sets flash alert when translation exists' do
+      allow(I18n).to receive(:t).and_call_original
+      allow(I18n).to receive(:t)
+        .with('flash.users.create.validation', default: anything)
+        .and_return('Validation failed')
+
+      controller.send(:set_error_flash, :validation, { name: :create })
+
+      expect(controller.flash[:alert]).to eq('Validation failed')
+    end
+
+    it 'does nothing when translation is nil' do
+      allow(I18n).to receive(:t).and_return(nil)
+
+      controller.send(:set_error_flash, :validation, { name: :create })
+
+      expect(controller.flash[:alert]).to be_nil
+    end
+  end
+
+  describe '#build_service_instance' do
+    let(:service_with_zero_arity) do
+      Class.new do
+        def initialize; end
+      end
+    end
+
+    let(:service_with_user) do
+      Class.new do
+        attr_reader :user, :options
+
+        def initialize(user, **options)
+          @user = user
+          @options = options
+        end
+      end
+    end
+
+    let(:service_with_options) do
+      Class.new do
+        attr_reader :options
+
+        def initialize(**options)
+          @options = options
+        end
+      end
+    end
+
+    it 'instantiates service with zero arity' do
+      service = controller.send(:build_service_instance, service_with_zero_arity, {})
+
+      expect(service).to be_a(service_with_zero_arity)
+    end
+
+    it 'instantiates service with current_user when available' do
+      service = controller.send(:build_service_instance, service_with_user, { params: { name: 'Test' } })
+
+      expect(service.user.name).to eq('Test User')
+      expect(service.options[:params]).to eq({ name: 'Test' })
+    end
+  end
+
+  describe '#resolve_turbo_content' do
+    context 'with component' do
+      let(:component_class) do
+        Class.new do
+          def initialize(**args)
+            @args = args
+          end
+
+          def to_s
+            '<div>Component</div>'
+          end
+        end
+      end
+
+      it 'renders component to string' do
+        stream = { component: component_class, locals: {} }
+
+        result = controller.send(:resolve_turbo_content, stream)
+
+        expect(result).to be_present
+      end
+    end
+
+    context 'with partial' do
+      it 'renders partial to string' do
+        stream = { partial: 'shared/flash', locals: { message: 'Test' } }
+
+        # Mock render_to_string
+        allow(controller).to receive(:render_to_string)
+          .with(partial: 'shared/flash', locals: { message: 'Test' })
+          .and_return('<div>Flash</div>')
+
+        result = controller.send(:resolve_turbo_content, stream)
+
+        expect(result).to eq('<div>Flash</div>')
+      end
+    end
+
+    context 'without component or partial' do
+      it 'returns nil' do
+        stream = { action: :remove, target: :item }
+
+        result = controller.send(:resolve_turbo_content, stream)
+
+        expect(result).to be_nil
+      end
+    end
+  end
+
+  describe '#render_default_turbo_success' do
+    it 'renders flash update stream' do
+      controller.send(:render_default_turbo_success)
+
+      expect(controller.rendered).to be_present
+    end
+  end
+
+  describe '#render_default_turbo_error' do
+    it 'renders flash update stream' do
+      controller.send(:render_default_turbo_error)
+
+      expect(controller.rendered).to be_present
+    end
+
+    it 'includes form errors when present' do
+      controller.instance_variable_set(:@result, { errors: { name: ["can't be blank"] } })
+
+      controller.send(:render_default_turbo_error)
+
+      expect(controller.rendered).to be_present
+    end
+  end
+
+  describe '#render_page_config' do
+    it 'assigns page_config and renders with status' do
+      page_config = { type: :show, title: 'User' }
+
+      controller.send(:render_page_config, page_config, status: :ok)
+
+      expect(controller.instance_variable_get(:@page_config)).to eq(page_config)
+      expect(controller.rendered[:status]).to eq(:ok)
+    end
+  end
+
+  describe '#render_configured_component' do
+    let(:component_class) do
+      Class.new do
+        def initialize(**args)
+          @args = args
+        end
+      end
+    end
+
+    it 'renders component with merged locals' do
+      controller.instance_variable_set(:@result, { success: true, resource: 'user' })
+      config = { component: component_class, locals: { extra: 'data' }, status: :created }
+
+      controller.send(:render_configured_component, config)
+
+      expect(controller.rendered[:status]).to eq(:created)
+    end
+
+    it 'uses default status when not specified' do
+      config = { component: component_class }
+
+      controller.send(:render_configured_component, config)
+
+      expect(controller.rendered[:status]).to eq(:ok)
     end
   end
 end

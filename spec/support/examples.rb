@@ -1,5 +1,19 @@
 # frozen_string_literal: true
 
+# Mock service class for DSL tests
+# This is NOT the removed BetterController::Services::Service -
+# it's just a plain class used for testing the action DSL
+class ExampleService
+  def self.call(*_args)
+    { success: true }
+  end
+
+  def call(*_args)
+    { success: true }
+  end
+end
+
+# Test model for unit tests
 class ExampleModel
   include ActiveModel::Model
   include ActiveModel::Attributes
@@ -20,58 +34,14 @@ class ExampleModel
     @created_at ||= Time.current
     @updated_at ||= Time.current
   end
-end
 
-class ExampleService < BetterController::Services::Service
-  def model_class
-    ExampleModel
-  end
-
-  def permitted_attributes
-    [:name, :email]
-  end
-
-  def list_query
-    [
-      ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com'),
-      ExampleModel.new(id: 2, name: 'Example 2', email: 'example2@example.com'),
-      ExampleModel.new(id: 3, name: 'Example 3', email: 'example3@example.com')
-    ]
-  end
-
-  def find_query(id)
-    ExampleModel.new(id: id, name: "Example #{id}", email: "example#{id}@example.com")
-  end
-
-  def create(attributes)
-    model = model_class.new(attributes)
-    model.valid? ? model : raise_validation_error(model)
-  end
-
-  def update(resource, attributes)
-    resource.attributes = attributes
-    resource.valid? ? resource : raise_validation_error(resource)
-  end
-
-  def destroy(resource)
-    resource
-  end
-
-  private
-
-  def raise_validation_error(model)
-    raise ActiveModel::ValidationError.new(model)
-  end
-end
-
-class ExampleSerializer
-  include BetterController::Serializers::Serializer
-
-  attributes :id, :name, :email, :created_at, :updated_at
-  
-  methods :full_name
-  
-  def full_name
-    "#{object.name} (#{object.email})"
+  def as_json(_options = {})
+    {
+      id:         id,
+      name:       name,
+      email:      email,
+      created_at: created_at,
+      updated_at: updated_at
+    }
   end
 end

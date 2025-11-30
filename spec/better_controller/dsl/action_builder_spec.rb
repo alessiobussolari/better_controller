@@ -67,14 +67,6 @@ RSpec.describe BetterController::Dsl::ActionBuilder do
     end
   end
 
-  describe '#turbo_frame' do
-    it 'sets the turbo frame ID' do
-      builder.turbo_frame(:content)
-
-      expect(builder.config[:turbo_frame]).to eq(:content)
-    end
-  end
-
   describe '#params_key' do
     it 'sets the params key for strong parameters' do
       builder.params_key(:user)
@@ -201,7 +193,6 @@ RSpec.describe BetterController::Dsl::ActionBuilder do
       builder.service(ExampleService)
       builder.params_key(:user)
       builder.permit(:name, :email)
-      builder.turbo_frame(:users_content)
 
       builder.on_success do
         html { redirect_to :index }
@@ -224,9 +215,163 @@ RSpec.describe BetterController::Dsl::ActionBuilder do
       expect(config[:service]).to eq(ExampleService)
       expect(config[:params_key]).to eq(:user)
       expect(config[:permitted_params]).to eq(%i[name email])
-      expect(config[:turbo_frame]).to eq(:users_content)
       expect(config[:on_success]).to be_present
       expect(config[:error_handlers][:validation]).to be_present
+    end
+  end
+
+  describe 'turbo_stream block helpers' do
+    describe 'flash helper in on_success' do
+      it 'configures flash stream with type and message' do
+        builder.on_success do
+          turbo_stream do
+            flash type: :notice, message: 'Success!'
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        flash_stream = streams.find { |s| s[:action] == :update && s[:target] == :flash }
+
+        expect(flash_stream).to be_present
+        expect(flash_stream[:locals]).to eq({ type: :notice, message: 'Success!' })
+      end
+
+      it 'uses default flash partial' do
+        builder.on_success do
+          turbo_stream do
+            flash type: :alert
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        flash_stream = streams.find { |s| s[:target] == :flash }
+
+        expect(flash_stream[:partial]).to eq('shared/flash')
+      end
+    end
+
+    describe 'form_errors helper in on_error' do
+      it 'configures form_errors stream' do
+        builder.on_error(:validation) do
+          turbo_stream do
+            form_errors
+          end
+        end
+
+        streams = builder.config[:error_handlers][:validation][:turbo_stream]
+        errors_stream = streams.find { |s| s[:target] == :form_errors }
+
+        expect(errors_stream).to be_present
+        expect(errors_stream[:action]).to eq(:update)
+        expect(errors_stream[:partial]).to eq('shared/form_errors')
+      end
+
+      it 'supports custom target for form_errors' do
+        builder.on_error(:validation) do
+          turbo_stream do
+            form_errors target: :custom_errors
+          end
+        end
+
+        streams = builder.config[:error_handlers][:validation][:turbo_stream]
+        errors_stream = streams.find { |s| s[:target] == :custom_errors }
+
+        expect(errors_stream).to be_present
+      end
+    end
+
+    describe 'multiple stream actions in one block' do
+      it 'supports all stream actions together' do
+        builder.on_success do
+          turbo_stream do
+            append :items_list, partial: 'items/item'
+            prepend :notifications
+            replace :counter, partial: 'shared/counter'
+            update :status
+            remove :loading
+            flash type: :notice
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+
+        expect(streams.length).to eq(6)
+        expect(streams.map { |s| s[:action] }).to contain_exactly(
+          :append, :prepend, :replace, :update, :remove, :update
+        )
+      end
+    end
+
+    describe 'refresh action' do
+      it 'configures refresh stream' do
+        builder.on_success do
+          turbo_stream do
+            refresh
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        refresh_stream = streams.find { |s| s[:action] == :refresh }
+
+        expect(refresh_stream).to be_present
+      end
+    end
+
+    describe 'before and after actions' do
+      it 'configures before stream action' do
+        builder.on_success do
+          turbo_stream do
+            before :item_2, partial: 'items/item'
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        before_stream = streams.find { |s| s[:action] == :before }
+
+        expect(before_stream[:target]).to eq(:item_2)
+      end
+
+      it 'configures after stream action' do
+        builder.on_success do
+          turbo_stream do
+            after :item_1, partial: 'items/item'
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        after_stream = streams.find { |s| s[:action] == :after }
+
+        expect(after_stream[:target]).to eq(:item_1)
+      end
+    end
+
+    describe 'component option in streams' do
+      it 'supports component option in append' do
+        builder.on_success do
+          turbo_stream do
+            append :items_list, component: 'ItemComponent'
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        append_stream = streams.find { |s| s[:action] == :append }
+
+        expect(append_stream[:component]).to eq('ItemComponent')
+      end
+
+      it 'supports locals with component' do
+        builder.on_success do
+          turbo_stream do
+            replace :item, component: 'ItemComponent', locals: { item: 'test' }
+          end
+        end
+
+        streams = builder.config[:on_success][:turbo_stream]
+        replace_stream = streams.find { |s| s[:action] == :replace }
+
+        expect(replace_stream[:component]).to eq('ItemComponent')
+        expect(replace_stream[:locals]).to eq({ item: 'test' })
+      end
     end
   end
 end

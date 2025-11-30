@@ -3,19 +3,23 @@
 module BetterController
   module Controllers
     # Module providing helper methods for standardized API responses
+    #
+    # Response format:
+    #   {
+    #     "data": { ... },
+    #     "meta": { "version": "v1", ... }
+    #   }
+    #
     module ResponseHelpers
       extend ActiveSupport::Concern
 
       # Respond with a success response
       # @param data [Object] The data to include in the response
       # @param status [Symbol, Integer] The HTTP status code
-      # @param options [Hash] Additional options for the response
+      # @param meta [Hash] Additional metadata for the response
       # @return [Object] The formatted response
-      def respond_with_success(data = nil, status: :ok, options: {})
-        response = {
-          success: true,
-          data:    data,
-        }.merge(options)
+      def respond_with_success(data = nil, status: :ok, meta: {})
+        response = build_response(data, meta)
 
         if defined?(render)
           render json: response, status: status
@@ -25,21 +29,13 @@ module BetterController
       end
 
       # Respond with an error response
-      # @param error [Exception, String] The error or error message
+      # @param error [Exception, String, Hash, ActiveModel::Errors] The error or error message
       # @param status [Symbol, Integer] The HTTP status code
-      # @param options [Hash] Additional options for the response
+      # @param meta [Hash] Additional metadata for the response
       # @return [Object] The formatted error response
-      def respond_with_error(error = nil, status: :unprocessable_entity, options: {})
-        error_message = error.is_a?(Exception) ? error.message : error.to_s
-        error_type    = error.is_a?(Exception) ? error.class.name : 'Error'
-
-        response = {
-          success: false,
-          error:   {
-            type:    error_type,
-            message: error_message,
-          },
-        }.merge(options)
+      def respond_with_error(error = nil, status: :unprocessable_entity, meta: {})
+        error_data = { error: format_error(error) }
+        response = build_response(error_data, meta)
 
         if defined?(render)
           render json: response, status: status
@@ -48,28 +44,40 @@ module BetterController
         end
       end
 
-      # Respond with a paginated collection
-      # @param collection [Object] The collection to paginate
-      # @param options [Hash] Pagination options
-      # @return [Object] The paginated response
-      def respond_with_pagination(collection, options = {})
-        page     = (options[:page] || 1).to_i
-        per_page = (options[:per_page] || 25).to_i
+      private
 
-        paginated = collection.page(page).per(per_page)
+      # Build the standard response structure
+      # @param data [Object] The data to include
+      # @param meta [Hash] Additional metadata
+      # @return [Hash] The formatted response
+      def build_response(data, meta = {})
+        {
+          data: data,
+          meta: { version: BetterController.config.api_version }.merge(meta)
+        }
+      end
 
-        respond_with_success(
-          paginated,
-          options: {
-            meta: {
-              pagination: {
-                current_page: paginated.current_page,
-                total_pages:  paginated.total_pages,
-                total_count:  paginated.total_count,
-              },
-            },
-          }
-        )
+      # Format error into a standardized structure
+      # @param error [Exception, String, Hash, ActiveModel::Errors] The error
+      # @return [Hash] Formatted error hash
+      def format_error(error)
+        case error
+        when Exception
+          { type: error.class.name, message: error.message }
+        when Hash
+          error
+        when String
+          { message: error }
+        else
+          # Handle ActiveModel::Errors or similar
+          if error.respond_to?(:full_messages)
+            { messages: error.full_messages, details: error.to_hash }
+          elsif error.respond_to?(:to_hash)
+            error.to_hash
+          else
+            { message: error.to_s }
+          end
+        end
       end
     end
   end

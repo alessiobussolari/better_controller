@@ -2,588 +2,366 @@
 
 require 'spec_helper'
 
-# Define test classes for the specs
-class ExampleModel
-  attr_accessor :id, :name, :email
-  
+# Mock ActiveRecord model for testing
+class MockModel
+  attr_accessor :id, :name, :email, :errors
+
   def initialize(attributes = {})
     @id = attributes[:id]
     @name = attributes[:name]
     @email = attributes[:email]
+    @errors = MockErrors.new
   end
-  
+
+  def as_json(_options = {})
+    { id: id, name: name, email: email }
+  end
+
   def save
-    true
+    if name.nil? || name.empty?
+      errors.add(:name, 'is required')
+      false
+    else
+      @id ||= rand(1000)
+      true
+    end
   end
-  
+
+  def update(attributes)
+    if attributes[:name].nil? || attributes[:name].empty?
+      errors.add(:name, 'is required')
+      false
+    else
+      attributes.each { |k, v| send("#{k}=", v) if respond_to?("#{k}=") }
+      true
+    end
+  end
+
   def destroy
     true
   end
-  
-  def update(attributes)
-    attributes.each do |key, value|
-      send("#{key}=", value) if respond_to?("#{key}=")
-    end
-    true
+end
+
+# Mock errors
+class MockErrors
+  def initialize
+    @errors = {}
+  end
+
+  def add(field, message)
+    @errors[field] ||= []
+    @errors[field] << message
+  end
+
+  def any?
+    @errors.any?
+  end
+
+  def full_messages
+    @errors.map { |field, messages| messages.map { |m| "#{field.to_s.capitalize} #{m}" } }.flatten
+  end
+
+  def to_hash
+    @errors
   end
 end
 
-class ExampleService
-  def self.resource_class
-    ExampleModel
+# Mock collection for testing
+class MockCollection
+  def initialize(items)
+    @items = items
   end
-  
-  def self.list_query
-    [ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')]
+
+  def all
+    @items
   end
-  
-  def self.find_query(id)
-    ExampleModel.new(id: id.to_i, name: "Example #{id}", email: "example#{id}@example.com")
+
+  def find(id)
+    @items.find { |item| item.id == id.to_i } || raise(MockRecordNotFound, "Not found: #{id}")
   end
-  
-  def self.create(attributes)
-    ExampleModel.new(attributes.merge(id: 1))
-  end
-  
-  def self.update(id, attributes)
-    model = find_query(id)
-    model.update(attributes)
-    model
-  end
-  
-  def self.destroy(id)
-    model = find_query(id)
-    model.destroy
-    model
+
+  def new(attributes = {})
+    MockModel.new(attributes)
   end
 end
 
-class ExampleSerializer
-  attr_reader :object
-  
-  def initialize(object)
-    @object = object
-  end
-  
-  def serialize(*args)
-    options = args.first || {}
-    {
-      id: object.id,
-      name: object.name,
-      email: object.email
-    }
-  end
-  
-  def serialize_collection(collection)
-    collection.map { |item| ExampleSerializer.new(item).serialize }
-  end
-end
+class MockRecordNotFound < StandardError; end
 
 RSpec.describe BetterController::Controllers::ResourcesController do
-  # Create a test class that includes ResourcesController
-  class TestController
-    include BetterController::Utils::ParamsHelpers
-    include BetterController::Utils::Logging
-    include BetterController::Controllers::ResourcesController
+  let(:test_controller_class) do
+    Class.new do
+      include BetterController::Controllers::ResourcesController
 
-    attr_accessor :params, :request, :response_body, :response_status, :action_name, :resource
+      attr_accessor :params, :rendered, :action_name
 
-    # Mock request class
-    class MockRequest
-      attr_accessor :url, :query_parameters
-      
-      def initialize(url, query_parameters = {})
-        @url = url
-        @query_parameters = query_parameters
+      def initialize
+        @params = {}
+        @rendered = nil
+        @action_name = 'test'
+        @performed = false
       end
-    end
-    
-    def initialize
-      @params = {}
-      @response_body = nil
-      @response_status = nil
-      @request = MockRequest.new('http://test.com', {})
-      @action_name = 'test'
-    end
 
-    def resource_service_class
-      ExampleService
-    end
-
-    def resource_serializer
-      ExampleSerializer
-    end
-
-    def resource_params_root_key
-      :example
-    end
-
-    def create_message
-      'Resource created successfully'
-    end
-
-    def update_message
-      'Resource updated successfully'
-    end
-
-    def destroy_message
-      'Resource deleted successfully'
-    end
-
-    # Mock the respond_with method
-    def respond_with_success(data, options = {})
-      result = { data: data }
-      
-      # Handle meta in options or options[:options]
-      if options[:meta]
-        result[:meta] = options[:meta]
-      elsif options[:options] && options[:options][:meta]
-        result[:meta] = options[:options][:meta]
+      def render(options = {})
+        @rendered = options
+        @performed = true
       end
-      
-      # Handle message in options or options[:options]
-      if options[:message]
-        result[:message] = options[:message]
-      elsif options[:options] && options[:options][:message]
-        result[:message] = options[:options][:message]
-      end
-      
-      # Set the response status
-      @response_status = options[:status] || :ok
-      
-      # Set the response body
-      @response_body = result
-    end
 
-    def respond_with_error(errors, options = {})
-      @response_body = { errors: errors }.merge(options[:options] || {})
-      @response_status = options[:status] || :unprocessable_entity
-    end
+      def performed?
+        @performed
+      end
 
-    # Mock methods for params handling
-    def require_params(key)
-      if params.key?(key)
-        # Return a hash with permit method
-        params_obj = params[key]
-        def params_obj.permit(*args)
-          self
-        end
-        params_obj
-      else
-        raise ActionController::ParameterMissing.new(key)
+      def resource_class
+        @resource_class ||= MockCollection.new([
+                                                 MockModel.new(id: 1, name: 'Item 1', email: 'item1@test.com'),
+                                                 MockModel.new(id: 2, name: 'Item 2', email: 'item2@test.com')
+                                               ])
       end
-    end
-    
-    # Add resource_params method to override the one in ResourcesController
-    def resource_params
-      if params.key?(resource_params_root_key)
-        params[resource_params_root_key]
-      else
-        raise ActionController::ParameterMissing.new(resource_params_root_key)
+
+      def resource_scope
+        resource_class
       end
-    end
-    
-    # Add methods to handle resource finding and collection
-    def resource_finder
-      ExampleService.find_query(params[:id])
-    end
-    
-    def resource_collection_resolver
-      ExampleService.list_query
-    end
-    
-    # Add methods for resource creation, updating, and destruction
-    def resource_creator
-      ExampleService.create(resource_params)
-    end
-    
-    def resource_updater
-      ExampleService.update(params[:id], resource_params)
-    end
-    
-    def resource_destroyer
-      ExampleService.destroy(params[:id])
-    end
-    
-    # Add meta method for pagination
-    def meta
-      result = {}
-      
-      # Add pagination meta if pagination is enabled
-      if respond_to?(:pagination_enabled?) && pagination_enabled? && respond_to?(:pagination_meta)
-        result[:pagination] = pagination_meta(@resource_collection, {})
+
+      def resource_params
+        params[:resource] || {}
       end
-      
-      result
+
+      def log_debug(_message); end
+
+      def log_exception(_exception, _context = {}); end
     end
   end
 
-  let(:controller) { TestController.new }
-  let(:example_model) { ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com') }
+  let(:controller) { test_controller_class.new }
 
-  # Override ExampleService methods for testing
-  class << ExampleService
-    alias_method :original_list_query, :list_query
-    alias_method :original_find_query, :find_query
-    alias_method :original_create, :create
-    alias_method :original_update, :update
-    alias_method :original_destroy, :destroy
-    
-    def list_query
-      [ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')]
-    end
-    
-    def find_query(id)
-      ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')
-    end
-    
-    def create(attributes)
-      ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')
-    end
-    
-    def update(id, attributes)
-      ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')
-    end
-    
-    def destroy(id)
-      ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')
-    end
-  end
-  
-  # Override ExampleSerializer methods for testing
-  class ExampleSerializer
-    attr_reader :object
-    
-    def initialize(object = nil)
-      @object = object || ExampleModel.new(id: 1, name: 'Example 1', email: 'example1@example.com')
-    end
-    
-    def serialize(*args)
-      options = args.first || {}
-      {
-        id: object.id,
-        name: object.name,
-        email: object.email
-      }
-    end
-    
-    def serialize_collection(collection)
-      collection.map { |item| ExampleSerializer.new(item).serialize }
-    end
-  end
+  before { BetterController.reset_config! }
+  after { BetterController.reset_config! }
 
-  it { expect(controller).to respond_to(:index) }
-  it { expect(controller).to respond_to(:show) }
-  it { expect(controller).to respond_to(:create) }
-  it { expect(controller).to respond_to(:update) }
-  it { expect(controller).to respond_to(:destroy) }
+  describe 'action availability' do
+    it { expect(controller).to respond_to(:index) }
+    it { expect(controller).to respond_to(:show) }
+    it { expect(controller).to respond_to(:create) }
+    it { expect(controller).to respond_to(:update) }
+    it { expect(controller).to respond_to(:destroy) }
+  end
 
   describe '#index' do
-    before do
-      # Set up the controller instance variable to avoid nil errors
-      controller.instance_variable_set(:@resource_collection, [example_model])
-      controller.action_name = 'index'
-      
-      # Ensure the resource collection is properly set up
-      allow(controller).to receive(:resource_collection_resolver).and_return([example_model])
-      allow(controller).to receive(:serialize_resource).and_return([{ id: 1, name: 'Example 1', email: 'example1@example.com' }])
-    end
-    
     it 'returns a collection of resources' do
-      # Override the execute_action method to directly set the response
-      def controller.execute_action
-        data = [{ id: 1, name: 'Example 1', email: 'example1@example.com' }]
-        respond_with_success(data, options: { meta: {} })
-      end
-      
+      controller.action_name = 'index'
       controller.index
-      
-      expect(controller.response_status).to eq(:ok)
-      expect(controller.response_body[:data]).to be_an(Array)
+
+      expect(controller.rendered[:status]).to eq(:ok)
+      expect(controller.rendered[:json][:data]).to be_an(Array)
+      expect(controller.rendered[:json][:data].size).to eq(2)
     end
 
-    it 'includes pagination metadata when pagination is enabled' do
-      # Override the execute_action method to directly set the response with pagination metadata
-      def controller.execute_action
-        data = [{ id: 1, name: 'Example 1', email: 'example1@example.com' }]
-        meta = { pagination: {
-          total_count: 1,
-          total_pages: 1,
-          current_page: 1,
-          per_page: 25
-        }}
-        respond_with_success(data, options: { meta: meta })
-      end
-      
+    it 'includes version in meta' do
       controller.index
-      
-      expect(controller.response_body[:meta]).to include(:pagination)
+
+      expect(controller.rendered[:json][:meta][:version]).to eq('v1')
     end
   end
 
   describe '#show' do
-    before do
-      # Set up the resource
-      controller.resource = example_model
-      controller.action_name = 'show'
-    end
-    
     it 'returns a single resource' do
       controller.params = { id: 1 }
+      controller.action_name = 'show'
       controller.show
-      
-      expect(controller.response_status).to eq(:ok)
-      expect(controller.response_body[:data]).to be_a(Hash)
+
+      expect(controller.rendered[:status]).to eq(:ok)
+      expect(controller.rendered[:json][:data]).to be_a(Hash)
+      expect(controller.rendered[:json][:data][:id]).to eq(1)
+    end
+
+    it 'includes version in meta' do
+      controller.params = { id: 1 }
+      controller.show
+
+      expect(controller.rendered[:json][:meta][:version]).to eq('v1')
     end
   end
 
   describe '#create' do
     context 'with valid params' do
-      before do
-        # Override the respond_with_success method to set the status to :created
-        def controller.respond_with_success(data, options = {})
-          options[:status] = :created if action_name == 'create'
-          super(data, options)
-        end
-        
-        # Set the action_name to 'create'
+      it 'creates and returns the resource' do
+        controller.params = { resource: { name: 'New Item', email: 'new@test.com' } }
         controller.action_name = 'create'
-        
-        # Set up the resource
-        controller.resource = example_model
-      end
-      
-      it 'creates a new resource and returns success response' do
-        # Override execute_action to directly set the response
-        def controller.execute_action
-          data = { id: 1, name: 'Example 1', email: 'example1@example.com' }
-          respond_with_success(data, status: :created, options: { message: 'Resource created successfully' })
-        end
-        
-        controller.params = { example: { name: 'New Example', email: 'new@example.com' } }
         controller.create
-        
-        expect(controller.response_status).to eq(:created)
-        expect(controller.response_body[:data]).to be_a(Hash)
-        expect(controller.response_body[:message]).to eq('Resource created successfully')
+
+        expect(controller.rendered[:status]).to eq(:created)
+        expect(controller.rendered[:json][:data][:name]).to eq('New Item')
       end
     end
 
-    context 'with missing root param' do
-      it 'raises parameter missing error' do
-        # Override execute_action to raise ParameterMissing
-        def controller.execute_action
-          raise ActionController::ParameterMissing.new(:example)
-        end
-        
-        controller.params = {}
-        expect { controller.create }.to raise_error(ActionController::ParameterMissing)
+    context 'with invalid params' do
+      it 'returns error response' do
+        controller.params = { resource: { name: '', email: 'new@test.com' } }
+        controller.action_name = 'create'
+        controller.create
+
+        expect(controller.rendered[:status]).to eq(:unprocessable_entity)
+        expect(controller.rendered[:json][:data][:error]).to be_present
       end
     end
   end
 
   describe '#update' do
     context 'with valid params' do
-      before do
-        # Set up the resource
-        controller.resource = example_model
+      it 'updates and returns the resource' do
+        controller.params = { id: 1, resource: { name: 'Updated Item' } }
         controller.action_name = 'update'
-      end
-      
-      it 'updates the resource and returns success response' do
-        # Override execute_action to directly set the response
-        def controller.execute_action
-          data = { id: 1, name: 'Updated Example', email: 'updated@example.com' }
-          respond_with_success(data, options: { message: 'Resource updated successfully' })
-        end
-        
-        controller.params = { id: 1, example: { name: 'Updated Example', email: 'updated@example.com' } }
         controller.update
-        
-        expect(controller.response_status).to eq(:ok)
-        expect(controller.response_body[:data]).to be_a(Hash)
-        expect(controller.response_body[:message]).to eq('Resource updated successfully')
+
+        expect(controller.rendered[:status]).to eq(:ok)
+        expect(controller.rendered[:json][:data][:name]).to eq('Updated Item')
       end
     end
 
-    context 'with missing root param' do
-      it 'raises parameter missing error' do
-        # Override execute_action to raise ParameterMissing
-        def controller.execute_action
-          raise ActionController::ParameterMissing.new(:example)
-        end
-        
-        controller.params = { id: 1 }
-        expect { controller.update }.to raise_error(ActionController::ParameterMissing)
+    context 'with invalid params' do
+      it 'returns error response' do
+        controller.params = { id: 1, resource: { name: '' } }
+        controller.action_name = 'update'
+        controller.update
+
+        expect(controller.rendered[:status]).to eq(:unprocessable_entity)
       end
     end
   end
 
   describe '#destroy' do
-    before do
-      # Set up the resource
-      controller.resource = example_model
-      controller.action_name = 'destroy'
-    end
-    
-    it 'destroys the resource and returns success response' do
-      # Override execute_action to directly set the response
-      def controller.execute_action
-        data = { id: 1, name: 'Example 1', email: 'example1@example.com' }
-        respond_with_success(data, options: { message: 'Resource deleted successfully' })
-      end
-      
+    it 'destroys the resource and returns success' do
       controller.params = { id: 1 }
+      controller.action_name = 'destroy'
       controller.destroy
-      
-      expect(controller.response_status).to eq(:ok)
-      expect(controller.response_body[:data]).to be_a(Hash)
-      expect(controller.response_body[:message]).to eq('Resource deleted successfully')
+
+      expect(controller.rendered[:status]).to eq(:ok)
+    end
+  end
+
+  describe '#resource_class' do
+    it 'raises NotImplementedError when not overridden' do
+      base_class = Class.new do
+        include BetterController::Controllers::ResourcesController
+      end
+      base = base_class.new
+
+      expect { base.send(:resource_class) }.to raise_error(NotImplementedError)
+    end
+  end
+
+  describe '#resource_params' do
+    it 'raises NotImplementedError when not overridden' do
+      base_class = Class.new do
+        include BetterController::Controllers::ResourcesController
+
+        def resource_class
+          MockCollection.new([])
+        end
+      end
+      base = base_class.new
+
+      expect { base.send(:resource_params) }.to raise_error(NotImplementedError)
     end
   end
 
   describe '#serialize_resource' do
-    it 'serializes a resource using the specified serializer' do
-      serialized = controller.send(:serialize_resource, example_model, ExampleSerializer)
+    it 'uses as_json by default' do
+      model = MockModel.new(id: 1, name: 'Test', email: 'test@test.com')
+      result = controller.send(:serialize_resource, model)
 
-      expect(serialized).to be_a(Hash)
-      expect(serialized).to have_key(:id)
-      expect(serialized).to have_key(:name)
-    end
-
-    it 'returns resource unchanged when serializer is nil' do
-      result = controller.send(:serialize_resource, example_model, nil)
-      expect(result).to eq(example_model)
+      expect(result).to eq({ id: 1, name: 'Test', email: 'test@test.com' })
     end
   end
 
-  describe '#serialization_options' do
-    it 'returns an empty hash by default' do
-      expect(controller.send(:serialization_options)).to eq({})
+  describe '#serialize_collection' do
+    it 'maps serialize_resource over collection' do
+      models = [
+        MockModel.new(id: 1, name: 'Test 1', email: 'test1@test.com'),
+        MockModel.new(id: 2, name: 'Test 2', email: 'test2@test.com')
+      ]
+      result = controller.send(:serialize_collection, models)
+
+      expect(result.size).to eq(2)
+      expect(result[0][:id]).to eq(1)
+      expect(result[1][:id]).to eq(2)
     end
   end
 
-  describe 'action-specific serializers' do
-    it 'index_serializer returns resource_serializer' do
-      expect(controller.send(:index_serializer)).to eq(controller.send(:resource_serializer))
+  describe 'meta helpers' do
+    it '#index_meta returns empty hash by default' do
+      expect(controller.send(:index_meta)).to eq({})
     end
 
-    it 'show_serializer returns resource_serializer' do
-      expect(controller.send(:show_serializer)).to eq(controller.send(:resource_serializer))
+    it '#show_meta returns empty hash by default' do
+      expect(controller.send(:show_meta)).to eq({})
     end
 
-    it 'create_serializer returns resource_serializer' do
-      expect(controller.send(:create_serializer)).to eq(controller.send(:resource_serializer))
+    it '#create_meta returns empty hash by default' do
+      expect(controller.send(:create_meta)).to eq({})
     end
 
-    it 'update_serializer returns resource_serializer' do
-      expect(controller.send(:update_serializer)).to eq(controller.send(:resource_serializer))
+    it '#update_meta returns empty hash by default' do
+      expect(controller.send(:update_meta)).to eq({})
     end
 
-    it 'destroy_serializer returns resource_serializer' do
-      expect(controller.send(:destroy_serializer)).to eq(controller.send(:resource_serializer))
+    it '#destroy_meta returns empty hash by default' do
+      expect(controller.send(:destroy_meta)).to eq({})
     end
   end
 
-  describe '#add_meta and #meta' do
-    let(:base_controller_class) do
+  describe 'custom serialization' do
+    let(:custom_serializer_controller_class) do
       Class.new do
         include BetterController::Controllers::ResourcesController
-        def resource_service_class; ExampleService; end
-        def resource_params_root_key; :example; end
-      end
-    end
 
-    it 'meta returns an empty hash by default' do
-      base = base_controller_class.new
-      expect(base.send(:meta)).to eq({})
-    end
+        attr_accessor :params, :rendered, :action_name
 
-    it 'add_meta adds key/value to meta hash' do
-      base = base_controller_class.new
-      base.send(:add_meta, :total, 100)
-      expect(base.send(:meta)[:total]).to eq(100)
-    end
-  end
-
-  describe '#resource_service' do
-    it 'returns a new instance of resource_service_class' do
-      service = controller.send(:resource_service)
-      expect(service).to be_a(ExampleService)
-    end
-  end
-
-  describe '#resource_service_class' do
-    it 'raises NotImplementedError when not overridden' do
-      # Create a controller without resource_service_class override
-      base_controller_class = Class.new do
-        include BetterController::Controllers::ResourcesController
-      end
-      base = base_controller_class.new
-      expect { base.send(:resource_service_class) }.to raise_error(NotImplementedError)
-    end
-  end
-
-  describe '#resource_params_root_key' do
-    it 'raises NotImplementedError when not overridden' do
-      # Create a controller without resource_params_root_key override
-      base_controller_class = Class.new do
-        include BetterController::Controllers::ResourcesController
-        def resource_service_class; ExampleService; end
-      end
-      base = base_controller_class.new
-      expect { base.send(:resource_params_root_key) }.to raise_error(NotImplementedError)
-    end
-  end
-
-  describe 'message methods' do
-    context 'when not overridden' do
-      let(:base_controller_class) do
-        Class.new do
-          include BetterController::Controllers::ResourcesController
-          def resource_service_class; ExampleService; end
-          def resource_params_root_key; :example; end
+        def initialize
+          @params = {}
+          @rendered = nil
+          @action_name = 'test'
+          @performed = false
         end
-      end
 
-      it 'create_message returns nil' do
-        expect(base_controller_class.new.send(:create_message)).to be_nil
-      end
+        def render(options = {})
+          @rendered = options
+          @performed = true
+        end
 
-      it 'update_message returns nil' do
-        expect(base_controller_class.new.send(:update_message)).to be_nil
-      end
+        def performed?
+          @performed
+        end
 
-      it 'destroy_message returns nil' do
-        expect(base_controller_class.new.send(:destroy_message)).to be_nil
+        def resource_class
+          @resource_class ||= MockCollection.new([
+                                                   MockModel.new(id: 1, name: 'Item 1', email: 'item1@test.com')
+                                                 ])
+        end
+
+        def resource_scope
+          resource_class
+        end
+
+        def resource_params
+          params[:resource] || {}
+        end
+
+        # Custom serialization
+        def serialize_resource(resource)
+          { custom_id: resource.id, custom_name: resource.name.upcase }
+        end
+
+        def log_debug(_message); end
+
+        def log_exception(_exception, _context = {}); end
       end
     end
-  end
 
-  describe '#resource_key_param' do
-    it 'returns params[:id]' do
-      controller.params = { id: 42 }
-      expect(controller.send(:resource_key_param)).to eq(42)
-    end
-  end
+    it 'allows custom serialization via override' do
+      ctrl = custom_serializer_controller_class.new
+      ctrl.params = { id: 1 }
+      ctrl.show
 
-  describe '#ancestry_key_params' do
-    it 'returns empty hash by default' do
-      expect(controller.send(:ancestry_key_params)).to eq({})
-    end
-  end
-
-  describe '#resource_create_params' do
-    it 'returns resource_params' do
-      controller.params = { example: { name: 'Test' } }
-      expect(controller.send(:resource_create_params)).to eq({ name: 'Test' })
-    end
-  end
-
-  describe '#resource_update_params' do
-    it 'returns resource_params' do
-      controller.params = { example: { name: 'Updated' } }
-      expect(controller.send(:resource_update_params)).to eq({ name: 'Updated' })
+      expect(ctrl.rendered[:json][:data]).to eq({ custom_id: 1, custom_name: 'ITEM 1' })
     end
   end
 end

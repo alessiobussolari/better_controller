@@ -33,6 +33,18 @@ module BetterController
         @handlers[:json] = block
       end
 
+      # Define CSV response handler
+      # @yield Block to execute for CSV requests
+      def csv(&block)
+        @handlers[:csv] = block
+      end
+
+      # Define XML response handler
+      # @yield Block to execute for XML requests
+      def xml(&block)
+        @handlers[:xml] = block
+      end
+
       # Helper: Redirect to a path (for HTML)
       # @param path [String, Symbol] Redirect path or route helper
       # @param options [Hash] Redirect options (notice, alert, etc.)

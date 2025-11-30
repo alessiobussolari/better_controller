@@ -38,6 +38,38 @@ module BetterController
 
       # Module containing overrides that need to take precedence
       module Overrides
+        # Override render to support Page objects directly
+        # @param options [Object] Render options or Page object
+        # @param extra_options [Hash] Additional render options
+        # @param block [Proc] Optional block
+        def render(options = nil, extra_options = {}, &block)
+          if page_object?(options)
+            render_page_object(options, **extra_options)
+          else
+            super
+          end
+        end
+
+        # Render a Page object directly using its ViewComponent
+        # Falls back to traditional ERB template if ViewComponent is not available
+        # @param page [Object] Page object (responds to view_component_class and build_page)
+        # @param status [Symbol] HTTP status code
+        # @param options [Hash] Additional render options
+        def render_page_object(page, status: :ok, **options)
+          @page = page
+          @page_config = page.build_page
+
+          # Try to get the ViewComponent class
+          begin
+            component_class = page.view_component_class
+            render component_class.new(config: @page_config), status: status, **options
+          rescue NotImplementedError, NameError
+            # Fallback: if ViewComponent doesn't exist, use traditional ERB template
+            # The template can access @page and @page_config
+            super(status: status, **options)
+          end
+        end
+
         # Override render_page_config to use BetterUI components if available
         # @param config [Hash] Page configuration
         # @param options [Hash] Render options
@@ -45,8 +77,8 @@ module BetterController
           @page_config = config
           status = options.delete(:status) || :ok
 
-          # Try to use page type-specific component
-          component = resolve_page_component(config)
+          # First try to use :klass if present (from Page object)
+          component = config[:klass] || resolve_page_component(config)
 
           if component
             render component.new(config: config), status: status, **options
@@ -55,12 +87,22 @@ module BetterController
             render status: status, **options
           end
         end
+
+        private
+
+        # Check if an object is a Page object using duck typing
+        # @param obj [Object] Object to check
+        # @return [Boolean] True if object is a Page object
+        def page_object?(obj)
+          obj.respond_to?(:view_component_class) && obj.respond_to?(:build_page)
+        end
       end
 
       included do
         # Include all concerns
         include Concerns::TurboSupport
         include Concerns::ServiceResponder
+        include Concerns::CsvSupport
         include Concerns::ActionDsl
 
         # Include rendering helpers if available
