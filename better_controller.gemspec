@@ -46,10 +46,11 @@ Gem::Specification.new do |spec|
 
   # Development dependencies
   spec.add_development_dependency 'rails', '>= 6.0'
-  spec.add_development_dependency 'rspec-rails', '~> 5.0'
-  spec.add_development_dependency 'rubocop', '~> 1.50'
-  spec.add_development_dependency 'rubocop-rails', '~> 2.19'
-  spec.add_development_dependency 'rubocop-rspec', '~> 2.22'
+  spec.add_development_dependency 'rspec-rails', '~> 6.0'
+  spec.add_development_dependency 'rubocop', '~> 1.21'
+  spec.add_development_dependency 'rubocop-performance', '~> 1.24'
+  spec.add_development_dependency 'rubocop-rails', '~> 2.25'
+  spec.add_development_dependency 'rubocop-rspec', '~> 3.0'
   spec.add_development_dependency 'simplecov', '~> 0.22'
   spec.add_development_dependency 'generator_spec', '~> 0.10'
   spec.add_development_dependency 'ammeter', '~> 1.1'
