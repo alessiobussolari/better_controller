@@ -10,6 +10,7 @@ AllCops:
   SuggestExtensions: false
   Exclude:
     - "spec/**/*"
+    - "vendor/**/*"
 
 Style/Documentation:
   Enabled: false
