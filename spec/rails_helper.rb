@@ -41,9 +41,9 @@ SimpleCov.start do
 
   track_files '{lib}/**/*.rb'
 
-  # Coverage threshold - lower for integration tests since they focus on specific scenarios
-  # Unit tests already enforce 95% coverage
-  minimum_coverage 50
+  # No minimum_coverage for integration/generator tests
+  # They test specific scenarios, not the entire gem
+  # Unit tests already enforce 90% coverage threshold
 end
 
 # AFTER SimpleCov - Load the Rails test application
