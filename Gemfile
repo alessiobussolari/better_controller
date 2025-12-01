@@ -12,6 +12,7 @@ gem 'rspec', '~> 3.0'
 gem 'rubocop', '~> 1.21'
 gem 'rubocop-performance', '~> 1.24'
 gem 'rubocop-rails', '~> 2.25'
+gem 'rubocop-rake', '~> 0.6'
 gem 'rubocop-rspec', '~> 3.0'
 
 group :test do

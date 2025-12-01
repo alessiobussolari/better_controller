@@ -50,6 +50,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rubocop', '~> 1.21'
   spec.add_development_dependency 'rubocop-performance', '~> 1.24'
   spec.add_development_dependency 'rubocop-rails', '~> 2.25'
+  spec.add_development_dependency 'rubocop-rake', '~> 0.6'
   spec.add_development_dependency 'rubocop-rspec', '~> 3.0'
   spec.add_development_dependency 'simplecov', '~> 0.22'
   spec.add_development_dependency 'generator_spec', '~> 0.10'
