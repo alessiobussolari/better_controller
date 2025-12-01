@@ -19,10 +19,24 @@ class <%= class_name %>Controller < ApplicationController
   # end
 
 <% end -%>
+<% if has_action?(:new) -%>
+  # GET /<%= file_name %>/new
+  # def new
+  #   # Override to customize
+  # end
+
+<% end -%>
 <% if has_action?(:create) -%>
   # POST /<%= file_name %>
   # def create
   #   # Default implementation from ResourcesController
+  #   # Override to customize
+  # end
+
+<% end -%>
+<% if has_action?(:edit) -%>
+  # GET /<%= file_name %>/:id/edit
+  # def edit
   #   # Override to customize
   # end
 

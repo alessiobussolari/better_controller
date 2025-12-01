@@ -45,6 +45,26 @@ module BetterController
         @handlers[:xml] = block
       end
 
+      # Define Turbo Frame response handler
+      # @yield Block to define turbo frame rendering (evaluated in TurboFrameBuilder context)
+      #
+      # @example Render a component
+      #   turbo_frame do
+      #     component Users::ListComponent, locals: { title: 'Users' }
+      #   end
+      #
+      # @example Render a partial
+      #   turbo_frame do
+      #     partial 'users/list', locals: { users: @users }
+      #   end
+      def turbo_frame(&block)
+        if block_given?
+          builder = TurboFrameBuilder.new
+          builder.instance_eval(&block)
+          @handlers[:turbo_frame] = builder.build
+        end
+      end
+
       # Helper: Redirect to a path (for HTML)
       # @param path [String, Symbol] Redirect path or route helper
       # @param options [Hash] Redirect options (notice, alert, etc.)

@@ -16,15 +16,9 @@ class UsersController < ApplicationController
     # Service configuration
     service Users::CreateService, method: :call
 
-    # ViewComponent configuration
+    # ViewComponent configuration (Page handles UI config, Component for direct rendering)
     page Users::CreatePage
     component Users::FormComponent, locals: { mode: :create }
-
-    # Page config customization
-    page_config do |config|
-      config.title = "Create User"
-      config.breadcrumbs = [{ label: "Users", path: "/users" }]
-    end
 
     # Parameter configuration
     params_key :user
@@ -92,14 +86,14 @@ class UsersController < ApplicationController
       json { respond_with_error('User not found', status: :not_found) }
     end
 
-    on_error :unauthorized do
+    on_error :authorization do
       html { redirect_to root_path, alert: 'Not authorized' }
-      json { respond_with_error('Unauthorized', status: :unauthorized) }
+      json { respond_with_error('Not authorized', status: :forbidden) }
     end
 
-    on_error :forbidden do
-      html { redirect_to root_path, alert: 'Access denied' }
-      json { respond_with_error('Forbidden', status: :forbidden) }
+    on_error :any do
+      html { redirect_to root_path, alert: 'An error occurred' }
+      json { respond_with_error('An error occurred', status: :internal_server_error) }
     end
   end
 end
@@ -135,35 +129,85 @@ Your service should return a hash with:
 
 ### page(klass)
 
-Define a ViewComponent page class for rendering.
+Define a Page class for UI configuration. The page receives data from the service result.
 
 ```ruby
 action :show do
-  page Users::ShowPage
+  service Users::ShowService  # → data (Hash or Result)
+  page Users::ShowPage        # → page config (Hash or Config object)
 end
 ```
 
+**Page Contract:**
+The page class is instantiated with the signature `Page.new(data, user: current_user)`:
+
+**Valid Return Types:**
+
+| Return Type | Result |
+|-------------|--------|
+| `Hash` | Wrapped in `BetterController::Config` |
+| `BetterController::Config` | Returned as-is |
+| `BetterPage::Config` (if configured) | Returned as-is |
+
+**Example 1: Return Hash (simplest)**
+
+```ruby
+class Users::ShowPage
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def show
+    { header: { title: @data.name }, details: { resource: @data } }
+  end
+end
+```
+
+**Example 2: Return BetterController::Config (with meta)**
+
+```ruby
+class Users::ShowPage
+  def initialize(data, user: nil)
+    @data = data
+  end
+
+  def show
+    BetterController::Config.new(
+      { header: { title: @data.name } },
+      meta: { page_type: :show, editable: true }
+    )
+  end
+end
+```
+
+**Example 3: Return BetterPage::Config (with BetterPage gem)**
+
+```ruby
+class Users::ShowPage < BetterPage::Base
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def show
+    BetterPage::Config.new(
+      { header: { title: @data.name } },
+      meta: { page_type: :show }
+    )
+  end
+end
+```
+
+**Note:** Services return data, Pages return UI configuration. These are separate concerns.
+
 ### component(klass, locals: {})
 
-Define a ViewComponent to render.
+Define a ViewComponent to render directly (without using BetterPage).
 
 ```ruby
 action :new do
   component Users::FormComponent, locals: { mode: :create }
-end
-```
-
-### page_config(&block)
-
-Customize the page configuration.
-
-```ruby
-action :index do
-  page_config do |config|
-    config.title = "All Users"
-    config.per_page = 25
-    config.filters = [:status, :department]
-  end
 end
 ```
 
@@ -230,12 +274,10 @@ end
 ```
 
 **Supported error types:**
-- `:validation` - Validation errors
-- `:not_found` - Resource not found
-- `:unauthorized` - Authentication required
-- `:forbidden` - Authorization denied
-- `:unprocessable_entity` - Cannot process request
-- `:server_error` - Internal server error
+- `:validation` - Validation errors (ActiveRecord::RecordInvalid, ActiveModel::ValidationError)
+- `:not_found` - Resource not found (ActiveRecord::RecordNotFound)
+- `:authorization` - Authorization denied (Pundit::NotAuthorizedError, CanCan::AccessDenied)
+- `:any` - Catch-all for any other error
 
 ### before(&block)
 

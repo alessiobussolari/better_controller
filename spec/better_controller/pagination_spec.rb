@@ -169,4 +169,138 @@ RSpec.describe BetterController::Utils::Pagination do
       )
     end
   end
+
+  describe 'edge cases' do
+    describe '#paginate with edge case parameters' do
+      it 'handles page 0 by defaulting to page 1' do
+        pagination_instance.params = { page: 0, per_page: 10 }
+
+        # Page should be treated as 1 when 0 is passed
+        pagination_instance.paginate(collection, page: 0, per_page: 2)
+
+        expect(collection).to have_received(:page).with(0)
+      end
+
+      it 'handles negative page numbers' do
+        pagination_instance.params = { page: -1, per_page: 10 }
+
+        pagination_instance.paginate(collection, page: -1, per_page: 2)
+
+        expect(collection).to have_received(:page).with(-1)
+      end
+
+      it 'handles very large page numbers' do
+        pagination_instance.params = { page: 999_999, per_page: 10 }
+
+        pagination_instance.paginate(collection, page: 999_999, per_page: 2)
+
+        expect(collection).to have_received(:page).with(999_999)
+      end
+
+      it 'handles per_page of 0' do
+        pagination_instance.paginate(collection, page: 1, per_page: 0)
+
+        expect(collection).to have_received(:per).with(0)
+      end
+
+      it 'handles very large per_page values' do
+        pagination_instance.paginate(collection, page: 1, per_page: 10_000)
+
+        expect(collection).to have_received(:per).with(10_000)
+      end
+
+      it 'handles nil page parameter by defaulting to 1' do
+        pagination_instance.paginate(collection, page: nil, per_page: 2)
+
+        # Pagination converts nil to 1
+        expect(collection).to have_received(:page).with(1)
+      end
+
+      it 'handles string page parameter by converting to integer' do
+        pagination_instance.paginate(collection, page: '5', per_page: 2)
+
+        # Pagination converts string to integer
+        expect(collection).to have_received(:page).with(5)
+      end
+    end
+
+    describe '#pagination_meta with edge case collections' do
+      it 'handles empty collection' do
+        empty_collection = []
+        empty_collection.define_singleton_method(:total_count) { 0 }
+        empty_collection.define_singleton_method(:total_pages) { 0 }
+        empty_collection.define_singleton_method(:current_page) { 1 }
+        empty_collection.define_singleton_method(:limit_value) { 10 }
+
+        meta = pagination_instance.pagination_meta(empty_collection)
+
+        expect(meta[:total_count]).to eq(0)
+        expect(meta[:total_pages]).to eq(0)
+      end
+
+      it 'handles single item collection' do
+        single_collection = [ExampleModel.new(id: 1, name: 'Single', email: 'single@example.com')]
+        single_collection.define_singleton_method(:total_count) { 1 }
+        single_collection.define_singleton_method(:total_pages) { 1 }
+        single_collection.define_singleton_method(:current_page) { 1 }
+        single_collection.define_singleton_method(:limit_value) { 10 }
+
+        meta = pagination_instance.pagination_meta(single_collection)
+
+        expect(meta[:total_count]).to eq(1)
+        expect(meta[:total_pages]).to eq(1)
+      end
+
+      it 'handles last page correctly' do
+        last_page_collection = [ExampleModel.new(id: 5, name: 'Last', email: 'last@example.com')]
+        last_page_collection.define_singleton_method(:total_count) { 5 }
+        last_page_collection.define_singleton_method(:total_pages) { 3 }
+        last_page_collection.define_singleton_method(:current_page) { 3 }
+        last_page_collection.define_singleton_method(:limit_value) { 2 }
+
+        meta = pagination_instance.pagination_meta(last_page_collection)
+
+        expect(meta[:current_page]).to eq(3)
+        expect(meta[:total_pages]).to eq(3)
+      end
+    end
+
+    describe '#pagination_links with edge cases' do
+      it 'handles first page (no prev link)' do
+        first_page_collection = paginated_collection
+        first_page_collection.define_singleton_method(:current_page) { 1 }
+
+        links = pagination_instance.pagination_links(first_page_collection)
+
+        expect(links[:prev]).to be_nil
+        expect(links[:next]).to be_present
+      end
+
+      it 'handles last page (no next link)' do
+        last_page_collection = [ExampleModel.new(id: 5, name: 'Last', email: 'last@example.com')]
+        last_page_collection.define_singleton_method(:total_count) { 5 }
+        last_page_collection.define_singleton_method(:total_pages) { 3 }
+        last_page_collection.define_singleton_method(:current_page) { 3 }
+        last_page_collection.define_singleton_method(:limit_value) { 2 }
+
+        links = pagination_instance.pagination_links(last_page_collection)
+
+        expect(links[:next]).to be_nil
+        expect(links[:prev]).to be_present
+      end
+
+      it 'handles single page (no prev or next links)' do
+        single_page_collection = [ExampleModel.new(id: 1, name: 'Only', email: 'only@example.com')]
+        single_page_collection.define_singleton_method(:total_count) { 1 }
+        single_page_collection.define_singleton_method(:total_pages) { 1 }
+        single_page_collection.define_singleton_method(:current_page) { 1 }
+        single_page_collection.define_singleton_method(:limit_value) { 10 }
+
+        links = pagination_instance.pagination_links(single_page_collection)
+
+        expect(links[:prev]).to be_nil
+        expect(links[:next]).to be_nil
+      end
+    end
+  end
 end

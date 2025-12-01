@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe ProductsController, type: :controller do
+RSpec.describe ActionDslProductsController, type: :controller do
   describe 'GET #index' do
     describe 'JSON format' do
       it 'returns JSON response' do

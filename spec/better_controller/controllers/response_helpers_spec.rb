@@ -214,4 +214,150 @@ RSpec.describe BetterController::Controllers::ResponseHelpers do
       expect(result).to eq({ message: '12345' })
     end
   end
+
+  describe 'edge cases' do
+    describe '#respond_with_success with complex data' do
+      it 'handles array data' do
+        controller.respond_with_success([{ id: 1 }, { id: 2 }])
+
+        expect(controller.rendered[:json][:data]).to eq([{ id: 1 }, { id: 2 }])
+      end
+
+      it 'handles empty hash data' do
+        controller.respond_with_success({})
+
+        expect(controller.rendered[:json][:data]).to eq({})
+      end
+
+      it 'handles empty array data' do
+        controller.respond_with_success([])
+
+        expect(controller.rendered[:json][:data]).to eq([])
+      end
+
+      it 'handles deeply nested data' do
+        data = { user: { profile: { settings: { theme: 'dark' } } } }
+        controller.respond_with_success(data)
+
+        expect(controller.rendered[:json][:data][:user][:profile][:settings][:theme]).to eq('dark')
+      end
+
+      it 'handles data with special characters' do
+        data = { message: 'Hello "World" & <Friends>' }
+        controller.respond_with_success(data)
+
+        expect(controller.rendered[:json][:data][:message]).to eq('Hello "World" & <Friends>')
+      end
+
+      it 'handles data with unicode characters' do
+        data = { message: 'Café ☕ émoji 🎉' }
+        controller.respond_with_success(data)
+
+        expect(controller.rendered[:json][:data][:message]).to eq('Café ☕ émoji 🎉')
+      end
+
+      it 'handles boolean data' do
+        controller.respond_with_success(true)
+
+        expect(controller.rendered[:json][:data]).to be true
+      end
+
+      it 'handles numeric data' do
+        controller.respond_with_success(42)
+
+        expect(controller.rendered[:json][:data]).to eq(42)
+      end
+
+      it 'handles string data' do
+        controller.respond_with_success('simple string')
+
+        expect(controller.rendered[:json][:data]).to eq('simple string')
+      end
+    end
+
+    describe '#respond_with_error with edge cases' do
+      it 'handles empty string error' do
+        controller.respond_with_error('')
+
+        expect(controller.rendered[:json][:data][:error][:message]).to eq('')
+      end
+
+      it 'handles nil error' do
+        controller.respond_with_error(nil)
+
+        expect(controller.rendered[:json][:data][:error][:message]).to eq('')
+      end
+
+      it 'handles empty hash error' do
+        controller.respond_with_error({})
+
+        expect(controller.rendered[:json][:data][:error]).to eq({})
+      end
+
+      it 'handles RuntimeError' do
+        error = RuntimeError.new('Runtime issue')
+        controller.respond_with_error(error)
+
+        expect(controller.rendered[:json][:data][:error][:type]).to eq('RuntimeError')
+        expect(controller.rendered[:json][:data][:error][:message]).to eq('Runtime issue')
+      end
+
+      it 'handles Exception with empty message' do
+        error = StandardError.new
+        controller.respond_with_error(error)
+
+        expect(controller.rendered[:json][:data][:error][:type]).to eq('StandardError')
+        expect(controller.rendered[:json][:data][:error][:message]).to eq('StandardError')
+      end
+
+      it 'handles array error' do
+        controller.respond_with_error(['Error 1', 'Error 2'])
+
+        expect(controller.rendered[:json][:data][:error][:message]).to eq('["Error 1", "Error 2"]')
+      end
+
+      it 'handles symbol error' do
+        controller.respond_with_error(:not_found)
+
+        expect(controller.rendered[:json][:data][:error][:message]).to eq('not_found')
+      end
+    end
+
+    describe 'HTTP status codes' do
+      it 'accepts numeric status codes' do
+        controller.respond_with_success('data', status: 201)
+
+        expect(controller.rendered[:status]).to eq(201)
+      end
+
+      it 'accepts common error statuses' do
+        %i[bad_request unauthorized forbidden not_found internal_server_error].each do |status|
+          controller.respond_with_error('Error', status: status)
+
+          expect(controller.rendered[:status]).to eq(status)
+        end
+      end
+    end
+
+    describe 'meta options edge cases' do
+      it 'handles empty meta hash' do
+        controller.respond_with_success('data', meta: {})
+
+        expect(controller.rendered[:json][:meta][:version]).to eq('v1')
+      end
+
+      it 'handles meta with nested data' do
+        controller.respond_with_success('data', meta: { pagination: { page: 1, total: 100 } })
+
+        expect(controller.rendered[:json][:meta][:pagination]).to eq({ page: 1, total: 100 })
+      end
+
+      it 'does not override version with custom meta' do
+        controller.respond_with_success('data', meta: { version: 'custom' })
+
+        # Version should be overridden by the passed meta
+        expect(controller.rendered[:json][:meta][:version]).to eq('custom')
+      end
+    end
+  end
 end

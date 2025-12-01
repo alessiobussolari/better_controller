@@ -3,7 +3,18 @@
 require 'spec_helper'
 require 'ostruct'
 
-RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
+RSpec.describe 'ActionDsl Turbo Frame Rendering' do
+  # Mock ViewComponent class for testing
+  let(:mock_view_component) do
+    Class.new do
+      attr_reader :config
+
+      def initialize(config:)
+        @config = config
+      end
+    end
+  end
+
   let(:controller_class) do
     Class.new do
       include BetterController::Controllers::Concerns::ActionDsl
@@ -80,21 +91,41 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
   let(:controller) { controller_class.new }
 
   describe '#render_page_or_component' do
-    context 'when turbo_frame_request? is true' do
+    describe 'with Turbo Frame request and page with klass' do
       before do
         controller.turbo_frame_request = true
       end
 
-      context 'with page_config present' do
-        let(:page_config) { { type: :index, title: 'Users' } }
+      context 'when page has a klass (ViewComponent class)' do
+        let(:inner_mock_view_component) do
+          Class.new do
+            attr_reader :config
+
+            def initialize(config:)
+              @config = config
+            end
+          end
+        end
+
+        let(:page_config) do
+          # Simulate BetterPage::Config behavior with klass
+          component_class = inner_mock_view_component
+          config = { type: :index, title: 'Users' }
+          config.define_singleton_method(:klass) { component_class }
+          config.define_singleton_method(:respond_to?) do |method, *|
+            method == :klass || super(method)
+          end
+          config
+        end
 
         before do
           controller.instance_variable_set(:@page_config, page_config)
         end
 
-        it 'renders with layout: false' do
+        it 'renders the ViewComponent with layout: false' do
           controller.send(:render_page_or_component, {})
 
+          expect(controller.rendered[:component]).to be_a(inner_mock_view_component)
           expect(controller.rendered[:layout]).to eq(false)
         end
 
@@ -113,75 +144,108 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
         end
       end
 
-      context 'with default render (no page_config or component)' do
-        it 'renders with layout: false' do
-          controller.send(:render_page_or_component, {})
-
-          expect(controller.rendered[:layout]).to eq(false)
-        end
-
-        it 'includes status in render options' do
-          controller.send(:render_page_or_component, {}, status: :ok)
-
-          expect(controller.rendered[:status]).to eq(:ok)
-          expect(controller.rendered[:layout]).to eq(false)
-        end
-      end
-
-      context 'with component configured' do
-        let(:component_class) do
+      context 'when page has [:klass] (Hash with klass key)' do
+        let(:mock_view_component) do
           Class.new do
-            attr_reader :locals
+            attr_reader :config
 
-            def initialize(**locals)
-              @locals = locals
+            def initialize(config:)
+              @config = config
             end
           end
         end
 
-        let(:config) do
-          {
-            component: component_class,
-            component_locals: { user: 'test' }
-          }
+        let(:page_config) { { type: :index, klass: mock_view_component } }
+
+        before do
+          controller.instance_variable_set(:@page_config, page_config)
         end
 
-        it 'renders the component' do
-          controller.send(:render_page_or_component, config)
+        it 'renders the ViewComponent with layout: false' do
+          controller.send(:render_page_or_component, {})
 
-          expect(controller.rendered[:component]).to be_a(component_class)
+          expect(controller.rendered[:component]).to be_a(mock_view_component)
+          expect(controller.rendered[:layout]).to eq(false)
         end
       end
-    end
 
-    context 'when turbo_frame_request? is false' do
-      before do
-        controller.turbo_frame_request = false
-      end
-
-      context 'with page_config present' do
+      context 'when page does not have klass (no ViewComponent)' do
         let(:page_config) { { type: :index, title: 'Users' } }
 
         before do
           controller.instance_variable_set(:@page_config, page_config)
         end
 
-        it 'does not include layout option' do
+        it 'renders with Rails standard render' do
+          controller.send(:render_page_or_component, {})
+
+          # No component rendered, just status
+          expect(controller.rendered[:component]).to be_nil
+          expect(controller.rendered[:status]).to eq(:ok)
+        end
+
+        it 'does not specify layout option' do
           controller.send(:render_page_or_component, {})
 
           expect(controller.rendered).not_to have_key(:layout)
         end
+      end
 
-        it 'renders with status only' do
-          controller.send(:render_page_or_component, {}, status: :ok)
+      context 'with no page_config at all' do
+        it 'renders with Rails standard render' do
+          controller.send(:render_page_or_component, {})
 
           expect(controller.rendered[:status]).to eq(:ok)
           expect(controller.rendered).not_to have_key(:layout)
         end
       end
+    end
+
+    describe 'with non-Turbo Frame request' do
+      before do
+        controller.turbo_frame_request = false
+      end
+
+      context 'with page_config present (with klass)' do
+        let(:mock_view_component) do
+          Class.new do
+            attr_reader :config
+
+            def initialize(config:)
+              @config = config
+            end
+          end
+        end
+
+        let(:page_config) { { type: :index, klass: mock_view_component } }
+
+        before do
+          controller.instance_variable_set(:@page_config, page_config)
+        end
+
+        it 'renders with Rails standard render (ignores klass)' do
+          controller.send(:render_page_or_component, {})
+
+          # No component rendered for non-turbo-frame
+          expect(controller.rendered[:component]).to be_nil
+          expect(controller.rendered[:status]).to eq(:ok)
+        end
+
+        it 'does not specify layout option' do
+          controller.send(:render_page_or_component, {})
+
+          expect(controller.rendered).not_to have_key(:layout)
+        end
+      end
 
       context 'with default render' do
-        it 'does not include layout option' do
+        it 'renders with Rails standard render' do
+          controller.send(:render_page_or_component, {})
+
+          expect(controller.rendered[:status]).to eq(:ok)
+        end
+
+        it 'does not specify layout option' do
           controller.send(:render_page_or_component, {})
 
           expect(controller.rendered).not_to have_key(:layout)
@@ -189,7 +253,7 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
       end
     end
 
-    context 'when turbo_frame_request? method does not exist' do
+    describe 'when turbo_frame_request? method does not exist' do
       let(:controller_without_turbo) do
         Class.new do
           include BetterController::Controllers::Concerns::ActionDsl
@@ -219,10 +283,124 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
         end.new
       end
 
-      it 'does not fail and renders without layout option' do
+      it 'does not fail and renders with Rails standard render' do
         controller_without_turbo.send(:render_page_or_component, {})
 
+        expect(controller_without_turbo.rendered[:status]).to eq(:ok)
         expect(controller_without_turbo.rendered).not_to have_key(:layout)
+      end
+    end
+  end
+
+  describe '#page_has_component?' do
+    context 'when page responds to :klass method' do
+      it 'returns true if klass is present' do
+        page = Object.new
+        page.define_singleton_method(:klass) { String }
+
+        expect(controller.send(:page_has_component?, page)).to be true
+      end
+
+      it 'returns false if klass is nil' do
+        page = Object.new
+        page.define_singleton_method(:klass) { nil }
+
+        expect(controller.send(:page_has_component?, page)).to be false
+      end
+    end
+
+    context 'when page is a Hash' do
+      it 'returns true if [:klass] is present' do
+        page = { klass: String }
+
+        expect(controller.send(:page_has_component?, page)).to be true
+      end
+
+      it 'returns false if [:klass] is nil' do
+        page = { klass: nil }
+
+        expect(controller.send(:page_has_component?, page)).to be false
+      end
+
+      it 'returns false if [:klass] key does not exist' do
+        page = { type: :index }
+
+        expect(controller.send(:page_has_component?, page)).to be false
+      end
+    end
+
+    context 'when page is nil' do
+      it 'returns false' do
+        expect(controller.send(:page_has_component?, nil)).to be false
+      end
+    end
+  end
+
+  describe '#render_turbo_frame_component' do
+    let(:mock_view_component) do
+      Class.new do
+        attr_reader :config
+
+        def initialize(config:)
+          @config = config
+        end
+      end
+    end
+
+    context 'when page responds to :klass method' do
+      let(:inner_mock_component) do
+        Class.new do
+          attr_reader :config
+
+          def initialize(config:)
+            @config = config
+          end
+        end
+      end
+
+      let(:page) do
+        component_class = inner_mock_component
+        obj = { type: :index }
+        obj.define_singleton_method(:klass) { component_class }
+        obj
+      end
+
+      it 'instantiates the ViewComponent with config: page' do
+        controller.send(:render_turbo_frame_component, page)
+
+        component = controller.rendered[:component]
+        expect(component).to be_a(inner_mock_component)
+        expect(component.config).to eq(page)
+      end
+
+      it 'renders with layout: false' do
+        controller.send(:render_turbo_frame_component, page)
+
+        expect(controller.rendered[:layout]).to eq(false)
+      end
+
+      it 'includes status in render options' do
+        controller.send(:render_turbo_frame_component, page, status: :created)
+
+        expect(controller.rendered[:status]).to eq(:created)
+      end
+    end
+
+    context 'when page is a Hash with [:klass]' do
+      let(:page) { { type: :index, klass: mock_view_component } }
+
+      it 'instantiates the ViewComponent with config: page' do
+        controller.send(:render_turbo_frame_component, page)
+
+        component = controller.rendered[:component]
+        expect(component).to be_a(mock_view_component)
+        expect(component.config).to eq(page)
+      end
+
+      it 'renders with layout: false' do
+        controller.send(:render_turbo_frame_component, page)
+
+        expect(controller.rendered[:layout]).to eq(false)
       end
     end
   end
@@ -252,6 +430,16 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
   end
 
   describe 'integration: action execution with Turbo Frame' do
+    let(:mock_view_component) do
+      Class.new do
+        attr_reader :config
+
+        def initialize(config:)
+          @config = config
+        end
+      end
+    end
+
     # Use a local service class to avoid polluting global ExampleService
     let(:turbo_test_service) do
       Class.new do
@@ -268,16 +456,18 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
       end
     end
 
-    context 'when request is a Turbo Frame request' do
+    context 'when request is a Turbo Frame request (no klass in result)' do
       before do
         controller.turbo_frame_request = true
         controller.format_type = :html
       end
 
-      it 'auto-disables layout in the rendered response' do
+      it 'renders with Rails standard render (no layout specified)' do
         controller.send(:execute_registered_action, :turbo_index)
 
-        expect(controller.rendered[:layout]).to eq(false)
+        # No klass in page_config, so standard render
+        expect(controller.rendered).not_to have_key(:layout)
+        expect(controller.rendered[:status]).to eq(:ok)
       end
     end
 
@@ -287,10 +477,11 @@ RSpec.describe 'ActionDsl Turbo Frame Auto-Layout' do
         controller.format_type = :html
       end
 
-      it 'does not set layout option' do
+      it 'renders with Rails standard render (no layout specified)' do
         controller.send(:execute_registered_action, :turbo_index)
 
         expect(controller.rendered).not_to have_key(:layout)
+        expect(controller.rendered[:status]).to eq(:ok)
       end
     end
   end

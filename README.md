@@ -403,19 +403,24 @@ BetterController.configure do |config|
   config.api_version = 'v1'
 
   # ViewComponent namespace for page types
-  config.page_component_namespace = 'Templates'
+  config.html_page_component_namespace = 'Templates'
 
   # Pagination settings
-  config.pagination = {
-    enabled: true,
-    per_page: 25
-  }
+  config.pagination_enabled = true
+  config.pagination_per_page = 25
 
   # Error handling
-  config.error_handling = {
-    log_errors: true,
-    detailed_errors: Rails.env.development?
-  }
+  config.error_handling_log_errors = true
+  config.error_handling_detailed_errors = Rails.env.development?
+
+  # Turbo settings
+  config.turbo_enabled = true
+  config.turbo_auto_flash = true
+  config.turbo_auto_form_errors = true
+
+  # HTML partials
+  config.html_flash_partial = 'shared/flash'
+  config.html_form_errors_partial = 'shared/form_errors'
 end
 ```
 

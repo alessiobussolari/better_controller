@@ -42,6 +42,9 @@ BetterController.configure do |config|
   # Wrapped responses (for BetterService integration)
   config.wrapped_responses_class = nil
 
+  # Page config (for BetterPage integration)
+  config.page_config_class = nil
+
   # API version (included in all API responses)
   config.api_version = 'v1'
 end
@@ -95,6 +98,93 @@ end
 
 When set, the Action DSL will automatically unwrap results from this class.
 
+### Page Config
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `page_config_class` | `nil` | Page config class (e.g., `BetterPage::Config`) |
+
+This option allows BetterController to work:
+
+1. **Standalone** (default) - Uses `BetterController::Config` for page configurations
+2. **With BetterPage** - Set to `BetterPage::Config` to use the external gem
+
+```ruby
+# Standalone mode (default)
+config.page_config_class = nil  # Hash results wrapped in BetterController::Config
+
+# With BetterPage gem
+config.page_config_class = BetterPage::Config  # Page classes return BetterPage::Config
+```
+
+#### BetterController::Config Class
+
+When using standalone mode, `BetterController::Config` provides a consistent interface for page configurations:
+
+```ruby
+# Creating a config object
+config = BetterController::Config.new(
+  { header: { title: 'Users' }, table: { items: users } },
+  meta: { page_type: :index }
+)
+
+# Hash-like access
+config[:header]           # => { title: 'Users' }
+config[:table][:items]    # => users
+
+# Components access
+config.components         # => { header: {...}, table: {...} }
+
+# Meta information
+config.meta               # => { page_type: :index }
+
+# Iteration
+config.each do |name, component|
+  puts "#{name}: #{component}"
+end
+```
+
+#### Normalization Behavior
+
+When a Page class is executed, BetterController automatically normalizes the result:
+
+| Page Returns | Result |
+|--------------|--------|
+| `nil` | `nil` |
+| `Hash` | Wrapped in `BetterController::Config` |
+| `BetterController::Config` | Returned as-is |
+| Custom class (if `page_config_class` configured) | Returned as-is |
+
+This allows Page classes to return simple Hashes for convenience:
+
+```ruby
+# Page returning Hash (automatically wrapped)
+class Users::IndexPage
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def index
+    { header: { title: 'Users' }, table: { items: @data } }
+  end
+end
+
+# Page returning BetterController::Config explicitly (for meta support)
+class Users::ShowPage
+  def initialize(data, user: nil)
+    @data = data
+  end
+
+  def show
+    BetterController::Config.new(
+      { header: { title: @data.name }, details: { resource: @data } },
+      meta: { page_type: :show, editable: true }
+    )
+  end
+end
+```
+
 ### API
 
 | Option | Default | Description |
@@ -114,6 +204,7 @@ BetterController.config.pagination_per_page
 # Check if feature is enabled
 BetterController.config.turbo_enabled?
 BetterController.config.wrapped_responses_enabled?
+BetterController.config.page_config_class_enabled?
 
 # Legacy hash-style access (backward compatibility)
 BetterController.config[:pagination]  # => { enabled: true, per_page: 25 }

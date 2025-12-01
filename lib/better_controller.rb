@@ -14,6 +14,7 @@ loader.setup
 require_relative 'better_controller/version'
 require_relative 'better_controller/configuration'
 require_relative 'better_controller/result'
+require_relative 'better_controller/config'
 require_relative 'better_controller/errors/index'
 
 # Require index files from each subdirectory

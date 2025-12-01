@@ -17,7 +17,7 @@ Understanding the difference is important:
 - **Single target**: Updates one element at a time
 - **Automatic**: Browser sends `Turbo-Frame` header, Rails handles the rest
 - **Navigation**: When you click a link inside a `<turbo-frame>`, only that frame updates
-- **Auto layout: false**: BetterController automatically renders without layout for Turbo Frame requests
+- **ViewComponent support**: When `@page_config` has a `klass` attribute, BetterController renders the ViewComponent with `layout: false`
 
 ```erb
 <%# In your view %>
@@ -29,15 +29,17 @@ Understanding the difference is important:
 <%= link_to 'Edit', edit_user_path(@user) %>
 ```
 
-**Note:** When using the Action DSL, BetterController automatically detects Turbo Frame requests and renders without layout. You don't need to handle this manually:
+**Note:** When using the Action DSL with a Page class that returns a `klass` attribute (ViewComponent class), BetterController automatically renders the component for Turbo Frame requests:
 
 ```ruby
-# This works automatically - no need to check turbo_frame_request?
 action :edit do
-  before { @user = User.find(params[:id]) }
+  service Users::EditService
+  page Users::EditPage  # Returns config with klass: EditComponent
 
   on_success do
-    html { render :edit }  # Auto layout: false for Turbo Frame requests
+    html { render_page }
+    # For Turbo Frame + klass: renders EditComponent with layout: false
+    # For normal HTML: uses Rails standard render (edit.html.erb)
   end
 end
 ```
@@ -101,6 +103,67 @@ Check if request is from a Turbo Native mobile app:
 if turbo_native_app?
   # Adjust response for native app
 end
+```
+
+## ViewComponent Rendering for Turbo Frames
+
+When using BetterPage or a page config that includes a `klass` attribute, BetterController automatically renders the ViewComponent for Turbo Frame requests.
+
+### How it works
+
+1. Request comes in as Turbo Frame (header `Turbo-Frame` present)
+2. BetterController checks if `@page_config` has a `klass` attribute
+3. If yes: instantiates and renders the ViewComponent with `layout: false`
+4. If no: uses Rails standard render (looks for .html.erb view)
+
+### Rails Convention
+
+**Important:** For normal HTML requests (non-Turbo Frame), BetterController uses Rails standard `render`. This means:
+- You **must create** the corresponding `.html.erb` view file (e.g., `index.html.erb`, `show.html.erb`)
+- If the view file doesn't exist, Rails will raise a `ActionView::MissingTemplate` error
+- ViewComponent is **only** used automatically for Turbo Frame requests when `@page_config` has a `klass` attribute
+
+This follows Rails conventions - the full page is rendered via ERB templates, while Turbo Frame updates can use ViewComponents for better encapsulation.
+
+### Example with BetterPage
+
+```ruby
+# Page class returns BetterPage::Config with klass
+class Users::IndexPage < BetterPage::IndexBasePage
+  def index
+    build_page  # Returns Config with klass = IndexViewComponent
+  end
+end
+
+# Controller
+action :index do
+  service Users::IndexService
+  page Users::IndexPage
+end
+```
+
+For Turbo Frame requests with a `klass` in page_config:
+```ruby
+# BetterController automatically does:
+render IndexViewComponent.new(config: @page_config), layout: false
+```
+
+For normal HTML requests (non-Turbo Frame):
+```ruby
+# BetterController uses Rails standard render:
+render status: :ok  # Looks for index.html.erb
+```
+
+### Manual Page Config with klass
+
+```ruby
+@page_config = {
+  type: :index,
+  items: @users,
+  klass: Users::IndexComponent  # ViewComponent class
+}
+# For Turbo Frame: renders Users::IndexComponent.new(config: @page_config)
+# For normal HTML: renders with Rails standard render
 ```
 
 ## Stream Builder Methods
@@ -238,7 +301,7 @@ turbo_redirect_to user_path(@user), notice: 'Created!'
 
 ### render_in_frame
 
-Automatically adjust layout for Turbo Frame requests:
+Helper method for manual Turbo Frame handling:
 
 ```ruby
 def edit
@@ -246,6 +309,8 @@ def edit
   render_in_frame  # Renders without layout if Turbo Frame request
 end
 ```
+
+**Note:** When using the Action DSL with a Page class that has a `klass` attribute, BetterController handles Turbo Frame rendering automatically. The `render_in_frame` helper is provided for manual controller implementations.
 
 ## Using with Action DSL
 

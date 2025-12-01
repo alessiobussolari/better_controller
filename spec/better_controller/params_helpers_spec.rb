@@ -278,4 +278,176 @@ RSpec.describe BetterController::Utils::ParamsHelpers do
       expect(result).to eq({ already: 'hash' })
     end
   end
+
+  describe 'edge cases' do
+    describe 'nil value handling' do
+      let(:nil_params) { { value: nil } }
+      let(:nil_helpers) { ParamsHelpersTestClass.new(nil_params) }
+
+      it 'returns default when value is nil' do
+        expect(nil_helpers.param(:value, default: 'default')).to eq('default')
+      end
+
+      it 'returns nil when value is nil and no default' do
+        expect(nil_helpers.param(:value)).to be_nil
+      end
+
+      it 'handles nil in boolean_param' do
+        expect(nil_helpers.boolean_param(:value, default: true)).to be true
+      end
+
+      it 'handles nil in integer_param' do
+        expect(nil_helpers.integer_param(:value, default: 0)).to eq(0)
+      end
+
+      it 'handles nil in float_param' do
+        expect(nil_helpers.float_param(:value, default: 0.0)).to eq(0.0)
+      end
+    end
+
+    describe 'empty string handling' do
+      let(:empty_params) { { value: '', name: '   ' } }
+      let(:empty_helpers) { ParamsHelpersTestClass.new(empty_params) }
+
+      it 'returns empty string as is' do
+        expect(empty_helpers.param(:value)).to eq('')
+      end
+
+      it 'returns whitespace string as is' do
+        expect(empty_helpers.param(:name)).to eq('   ')
+      end
+
+      it 'handles empty string in integer_param' do
+        expect(empty_helpers.integer_param(:value, default: 0)).to eq(0)
+      end
+
+      it 'handles empty string in boolean_param' do
+        # Empty string is truthy in presence check but returns nil when parsed
+        expect(empty_helpers.boolean_param(:value, default: false)).to be_nil
+      end
+    end
+
+    describe 'special characters handling' do
+      let(:special_params) do
+        {
+          unicode: 'café ☕',
+          html: '<script>alert("xss")</script>',
+          quotes: '"quoted" \'value\'',
+          newlines: "line1\nline2\r\nline3"
+        }
+      end
+      let(:special_helpers) { ParamsHelpersTestClass.new(special_params) }
+
+      it 'handles unicode characters' do
+        expect(special_helpers.param(:unicode)).to eq('café ☕')
+      end
+
+      it 'handles HTML tags' do
+        expect(special_helpers.param(:html)).to eq('<script>alert("xss")</script>')
+      end
+
+      it 'handles quotes' do
+        expect(special_helpers.param(:quotes)).to eq('"quoted" \'value\'')
+      end
+
+      it 'handles newlines' do
+        expect(special_helpers.param(:newlines)).to eq("line1\nline2\r\nline3")
+      end
+    end
+
+    describe 'numeric string edge cases' do
+      let(:numeric_params) do
+        {
+          leading_zero: '007',
+          negative: '-42',
+          float_string: '3.14159',
+          scientific: '1.5e10',
+          infinity: 'Infinity',
+          nan: 'NaN'
+        }
+      end
+      let(:numeric_helpers) { ParamsHelpersTestClass.new(numeric_params) }
+
+      it 'handles leading zeros in integer_param' do
+        expect(numeric_helpers.integer_param(:leading_zero)).to eq(7)
+      end
+
+      it 'handles negative numbers in integer_param' do
+        expect(numeric_helpers.integer_param(:negative)).to eq(-42)
+      end
+
+      it 'handles float strings in float_param' do
+        expect(numeric_helpers.float_param(:float_string)).to eq(3.14159)
+      end
+
+      it 'handles scientific notation in float_param' do
+        expect(numeric_helpers.float_param(:scientific)).to eq(1.5e10)
+      end
+    end
+
+    describe 'boolean value variations' do
+      let(:bool_params) do
+        {
+          true_string: 'true',
+          false_string: 'false',
+          one: '1',
+          zero: '0',
+          yes: 'yes',
+          no: 'no',
+          on: 'on',
+          off: 'off',
+          t: 't',
+          f: 'f'
+        }
+      end
+      let(:bool_helpers) { ParamsHelpersTestClass.new(bool_params) }
+
+      it 'handles "true" string' do
+        expect(bool_helpers.boolean_param(:true_string)).to be true
+      end
+
+      it 'handles "false" string' do
+        expect(bool_helpers.boolean_param(:false_string)).to be false
+      end
+
+      it 'handles "1" as true' do
+        expect(bool_helpers.boolean_param(:one)).to be true
+      end
+
+      it 'handles "0" as false' do
+        expect(bool_helpers.boolean_param(:zero)).to be false
+      end
+    end
+
+    describe 'nested parameter access' do
+      let(:nested_params) do
+        {
+          user: {
+            name: 'John',
+            address: {
+              city: 'New York',
+              zip: '10001'
+            }
+          }
+        }
+      end
+      let(:nested_helpers) { ParamsHelpersTestClass.new(nested_params) }
+
+      it 'returns nested hash' do
+        result = nested_helpers.hash_param(:user)
+        expect(result[:name]).to eq('John')
+        expect(result[:address][:city]).to eq('New York')
+      end
+    end
+
+    describe 'array with mixed types' do
+      let(:mixed_array_params) { { items: [1, 'two', 3.0, true, nil] } }
+      let(:mixed_helpers) { ParamsHelpersTestClass.new(mixed_array_params) }
+
+      it 'returns array with mixed types' do
+        result = mixed_helpers.array_param(:items)
+        expect(result).to eq([1, 'two', 3.0, true, nil])
+      end
+    end
+  end
 end

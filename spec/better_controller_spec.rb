@@ -4,8 +4,93 @@ require 'spec_helper'
 require 'better_controller_api'
 
 RSpec.describe BetterController do
-  it "has a version number" do
-    expect(BetterController::VERSION).not_to be nil
+  describe 'VERSION constant' do
+    it 'has a version number' do
+      expect(BetterController::VERSION).not_to be_nil
+    end
+
+    it 'follows semantic versioning format' do
+      expect(BetterController::VERSION).to match(/^\d+\.\d+\.\d+/)
+    end
+
+    it 'is a frozen string' do
+      expect(BetterController::VERSION).to be_frozen
+    end
+  end
+
+  describe '.configure' do
+    it 'yields the configuration block' do
+      yielded_config = nil
+      BetterController.configure { |c| yielded_config = c }
+      expect(yielded_config).to be_a(BetterController::Configuration)
+    end
+
+    it 'returns nil when no block given' do
+      expect(BetterController.configure).to be_nil
+    end
+
+    it 'allows setting configuration values' do
+      BetterController.configure do |config|
+        config.api_version = 'v2'
+      end
+      expect(BetterController.config.api_version).to eq('v2')
+    end
+  end
+
+  describe '.config' do
+    it 'returns a Configuration instance' do
+      expect(BetterController.config).to be_a(BetterController::Configuration)
+    end
+
+    it 'returns the same instance across calls' do
+      config1 = BetterController.config
+      config2 = BetterController.config
+      expect(config1).to be(config2)
+    end
+  end
+
+  describe '.configuration' do
+    it 'is an alias for .config' do
+      expect(BetterController.configuration).to eq(BetterController.config)
+    end
+  end
+
+  describe 'module loading' do
+    it 'loads all controller modules' do
+      expect(defined?(BetterController::Controllers::Base)).to eq('constant')
+      expect(defined?(BetterController::Controllers::HtmlController)).to eq('constant')
+      expect(defined?(BetterController::Controllers::ResourcesController)).to eq('constant')
+      expect(defined?(BetterController::Controllers::ResponseHelpers)).to eq('constant')
+      expect(defined?(BetterController::Controllers::ActionHelpers)).to eq('constant')
+    end
+
+    it 'loads all DSL modules' do
+      expect(defined?(BetterController::Dsl::ActionBuilder)).to eq('constant')
+      expect(defined?(BetterController::Dsl::ResponseBuilder)).to eq('constant')
+      expect(defined?(BetterController::Dsl::TurboStreamBuilder)).to eq('constant')
+    end
+
+    it 'loads all utility modules' do
+      expect(defined?(BetterController::Utils::Pagination)).to eq('constant')
+      expect(defined?(BetterController::Utils::ParamsHelpers)).to eq('constant')
+      expect(defined?(BetterController::Utils::Logging)).to eq('constant')
+      expect(defined?(BetterController::Utils::ParameterValidation)).to eq('constant')
+    end
+
+    it 'loads all rendering modules' do
+      expect(defined?(BetterController::Rendering::ComponentRenderer)).to eq('constant')
+      expect(defined?(BetterController::Rendering::PageConfigRenderer)).to eq('constant')
+    end
+
+    it 'loads all error classes' do
+      expect(defined?(BetterController::Errors::ServiceError)).to eq('constant')
+    end
+
+    it 'loads configuration classes' do
+      expect(defined?(BetterController::Configuration)).to eq('constant')
+      expect(defined?(BetterController::Config)).to eq('constant')
+      expect(defined?(BetterController::Result)).to eq('constant')
+    end
   end
 
   describe "when included in a controller" do

@@ -4,7 +4,9 @@ require_relative 'boot'
 require 'rails/all'
 
 Bundler.require(*Rails.groups)
+require 'kaminari'
 require 'better_controller'
+require 'better_controller_api'
 
 module RailsApp
   class Application < Rails::Application

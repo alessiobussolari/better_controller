@@ -81,14 +81,14 @@ class UsersController < ApplicationController
       json { respond_with_error('User not found', status: :not_found) }
     end
 
-    on_error :unauthorized do
+    on_error :authorization do
       html { redirect_to root_path, alert: 'Not authorized' }
-      json { respond_with_error('Unauthorized', status: :unauthorized) }
+      json { respond_with_error('Not authorized', status: :forbidden) }
     end
 
-    on_error :forbidden do
-      html { redirect_to root_path, alert: 'Access denied' }
-      json { respond_with_error('Forbidden', status: :forbidden) }
+    on_error :any do
+      html { redirect_to root_path, alert: 'An error occurred' }
+      json { respond_with_error('An error occurred', status: :internal_server_error) }
     end
   end
 end
@@ -210,7 +210,7 @@ action :show do
 end
 ```
 
-Supported types: `:validation`, `:not_found`, `:unauthorized`, `:forbidden`, `:unprocessable_entity`, `:server_error`
+Supported types: `:validation`, `:not_found`, `:authorization`, `:any`
 
 --------------------------------
 

@@ -138,7 +138,7 @@ module BetterController
             collection: result.resource.is_a?(Enumerable) && !result.resource.is_a?(String) ? result.resource : nil,
             success: result.success?,
             errors: result.respond_to?(:validation_errors) ? result.validation_errors : nil,
-            error_type: result.meta&.dig(:error_type),
+            error_type: result.meta.is_a?(Hash) ? result.meta[:error_type] : nil,
             message: result.respond_to?(:message) ? result.message : nil
           }.merge(result.meta || {})
         end
@@ -191,45 +191,80 @@ module BetterController
           end
         end
 
-        # Resolve page_config from various sources
-        # Priority: 1. Service result, 2. Page class, 3. nil (component only)
+        # Resolve page_config from Page class
         # @param config [Hash] Action configuration
         # @param result [Hash, nil] Service result
-        # @return [Hash, nil] Page configuration
+        # @return [BetterPage::Config, Hash, nil] Page configuration
         def resolve_page_config(config, result)
-          # 1. Page config from service (BetterService with viewer)
-          if result&.dig(:page_config)
-            page_config = deep_dup_config(result[:page_config])
+          return execute_page(config[:page], result) if config[:page]
 
-            # Apply DSL modifications
-            if config[:page_config_modifier]
-              instance_exec(page_config, &config[:page_config_modifier])
-            end
-
-            return page_config
-          end
-
-          # 2. Page class declared in DSL
-          if config[:page]
-            return build_page_config(config[:page], result)
-          end
-
-          # 3. Component only - no page_config needed
           nil
         end
 
-        # Build page_config from a page class
-        # @param page_class [Class] Page class
+        # Execute a Page class to get configuration
+        # @param page_class [Class] BetterPage class
         # @param result [Hash, nil] Service result
-        # @return [Hash] Page configuration
-        def build_page_config(page_class, result)
-          page_params = {
-            data: result,
-            params: params
-          }
-          page_params[:user] = current_user if respond_to?(:current_user, true)
+        # @return [BetterPage::Config, BetterController::Config] Page configuration
+        def execute_page(page_class, result)
+          normalized = normalize_result(result)
 
-          page_class.new(**page_params).to_config
+          # Primary data: collection for index, resource for show/edit/etc
+          primary_data = normalized[:collection] || normalized[:resource]
+
+          # Instantiate page with BetterPage signature: Page.new(data, user: current_user)
+          page = page_class.new(primary_data, user: current_user_if_available)
+
+          # Call the action method (index, show, edit, etc.)
+          page_method = action_name.to_sym
+
+          page_result = if page.respond_to?(page_method)
+                          page.public_send(page_method)
+                        elsif page.respond_to?(:call)
+                          page.call
+                        else
+                          raise ArgumentError, "Page #{page_class} does not respond to #{page_method} or call"
+                        end
+
+          # Normalize the page config result
+          normalize_page_config(page_result)
+        end
+
+        # Normalize page config to ensure compatibility between BetterController::Config and BetterPage::Config
+        # @param result [Object] Result from page class
+        # @return [BetterController::Config, Object] Normalized page config
+        def normalize_page_config(result)
+          return result if result.nil?
+
+          config_class = BetterController.configuration.page_config_class
+
+          # If a custom class is configured and result is already of that type, return as-is
+          return result if config_class && result.is_a?(config_class)
+
+          # If result is already a BetterController::Config, return as-is
+          return result if result.is_a?(BetterController::Config)
+
+          # If result is a Hash, wrap in BetterController::Config
+          return BetterController::Config.new(result) if result.is_a?(Hash)
+
+          # Otherwise, return as-is (may be a custom config object)
+          result
+        end
+
+        # Get current_user if available, nil otherwise
+        # @return [Object, nil] Current user or nil
+        def current_user_if_available
+          respond_to?(:current_user, true) ? current_user : nil
+        end
+
+        # Normalize result to hash for consistent access
+        # @param result [Hash, Object, nil] Result object or hash
+        # @return [Hash] Normalized hash
+        def normalize_result(result)
+          return {} if result.nil?
+          return result if result.is_a?(Hash)
+          return result.to_h if result.respond_to?(:to_h)
+
+          {}
         end
 
         # Deep duplicate a configuration hash
@@ -320,7 +355,10 @@ module BetterController
         # @param config [Hash] Action configuration
         # @param handlers [Hash] Response handlers
         def handle_html_success(config, handlers)
-          if handlers[:redirect]
+          # Check if this is a Turbo Frame request with explicit turbo_frame handler
+          if is_turbo_frame_request? && handlers[:turbo_frame].present?
+            handle_turbo_frame_response(handlers[:turbo_frame])
+          elsif handlers[:redirect]
             redirect_to_path(handlers[:redirect])
           elsif handlers[:html]
             instance_exec(&handlers[:html])
@@ -331,6 +369,35 @@ module BetterController
           else
             render_page_or_component(config)
           end
+        end
+
+        # Handle Turbo Frame response
+        # @param frame_config [Hash] Turbo frame configuration from TurboFrameBuilder
+        def handle_turbo_frame_response(frame_config)
+          config = frame_config[:config]
+          use_layout = frame_config[:layout] # default false
+
+          return render status: :ok, layout: use_layout unless config
+
+          case config[:type]
+          when :component
+            component = config[:klass].new(**build_component_locals(config[:locals] || {}))
+            render component, layout: use_layout
+          when :partial
+            render partial: config[:path], locals: config[:locals] || {}, layout: use_layout
+          when :page
+            render_page_config(@page_config, status: config[:status] || :ok, layout: use_layout)
+          else
+            render status: :ok, layout: use_layout
+          end
+        end
+
+        # Check if current request is a Turbo Frame request
+        # Uses turbo-rails helper if available, otherwise checks Turbo-Frame header
+        # @return [Boolean] true if Turbo Frame request
+        def is_turbo_frame_request?
+          # Check for Turbo-Frame header (standard Turbo behavior)
+          request.headers['Turbo-Frame'].present?
         end
 
         # Handle Turbo Stream success response
@@ -438,7 +505,10 @@ module BetterController
         def handle_html_error(config, handlers, error_type)
           status = error_status(error_type)
 
-          if handlers[:redirect]
+          # Check if this is a Turbo Frame request with explicit turbo_frame handler
+          if is_turbo_frame_request? && handlers[:turbo_frame].present?
+            handle_turbo_frame_error_response(handlers[:turbo_frame], status)
+          elsif handlers[:redirect]
             redirect_to_path(handlers[:redirect])
           elsif handlers[:html]
             instance_exec(@error, &handlers[:html])
@@ -446,6 +516,28 @@ module BetterController
             render_page_or_component(config, status: handlers[:render_page][:status] || status)
           else
             render_page_or_component(config, status: status)
+          end
+        end
+
+        # Handle Turbo Frame error response
+        # @param frame_config [Hash] Turbo frame configuration from TurboFrameBuilder
+        # @param status [Symbol] HTTP status code
+        def handle_turbo_frame_error_response(frame_config, status)
+          config = frame_config[:config]
+          use_layout = frame_config[:layout] # default false
+
+          return render status: status, layout: use_layout unless config
+
+          case config[:type]
+          when :component
+            component = config[:klass].new(**build_component_locals(config[:locals] || {}))
+            render component, status: status, layout: use_layout
+          when :partial
+            render partial: config[:path], locals: config[:locals] || {}, status: status, layout: use_layout
+          when :page
+            render_page_config(@page_config, status: config[:status] || status, layout: use_layout)
+          else
+            render status: status, layout: use_layout
           end
         end
 
@@ -521,27 +613,13 @@ module BetterController
         end
 
         # Render page or component
-        # Automatically disables layout for Turbo Frame requests
+        # Uses Rails standard render (looks for .html.erb view).
+        # For Turbo Frame requests, use the explicit turbo_frame {} DSL handler.
         # @param config [Hash] Action configuration
         # @param status [Symbol] HTTP status
-        def render_page_or_component(config, status: :ok)
-          # Auto-disable layout for Turbo Frame requests
-          layout_option = respond_to?(:turbo_frame_request?, true) && turbo_frame_request? ? false : nil
-
-          if @page_config.present?
-            render_page_config(@page_config, status: status, layout: layout_option)
-          elsif config[:component]
-            render_configured_component(
-              component: config[:component],
-              locals: config[:component_locals] || {},
-              status: status
-            )
-          else
-            # Default render (Rails convention)
-            options = { status: status }
-            options[:layout] = layout_option unless layout_option.nil?
-            render(**options)
-          end
+        def render_page_or_component(_config, status: :ok)
+          # Rails standard render - looks for action.html.erb
+          render status: status
         end
 
         # Render a configured component

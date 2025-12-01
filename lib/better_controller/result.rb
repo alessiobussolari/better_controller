@@ -41,5 +41,35 @@ module BetterController
     def errors
       resource.respond_to?(:errors) ? resource.errors : nil
     end
+
+    # Hash-like access for compatibility with code that uses dig
+    # @param keys [Array<Symbol>] Keys to dig into
+    # @return [Object, nil] The value at the nested key path
+    def dig(*keys)
+      to_h.dig(*keys)
+    end
+
+    # Access value by key (hash-like interface)
+    # @param key [Symbol] The key to access
+    # @return [Object, nil] The value
+    def [](key)
+      to_h[key]
+    end
+
+    # Convert result to hash for compatibility
+    # @return [Hash] Hash representation with resource, meta, and common keys
+    def to_h
+      {
+        resource: resource,
+        collection: resource.respond_to?(:each) && !resource.is_a?(Hash) ? resource : nil,
+        meta: meta,
+        success: success?,
+        message: message,
+        errors: errors,
+        error: meta[:error],
+        error_type: meta[:error_type],
+        page_config: meta[:page_config]
+      }.compact
+    end
   end
 end

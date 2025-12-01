@@ -162,4 +162,158 @@ RSpec.describe BetterController::Controllers::Concerns::CsvSupport do
       expect(controller.response_body).to include('ID,Product Name')
     end
   end
+
+  describe 'edge cases' do
+    describe '#generate_csv with special content' do
+      it 'handles values containing commas' do
+        collection = [{ name: 'Product, with comma', price: 10 }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('"Product, with comma"')
+      end
+
+      it 'handles values containing quotes' do
+        collection = [{ name: 'Product "Quoted"', price: 10 }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('Product ""Quoted""')
+      end
+
+      it 'handles values containing newlines' do
+        collection = [{ name: "Multi\nLine\nProduct", price: 10 }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('Multi')
+        expect(csv).to include('Line')
+      end
+
+      it 'handles nil values in collection' do
+        collection = [
+          { id: 1, name: nil, price: 10 },
+          { id: 2, name: 'Product', price: nil }
+        ]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('1,,10')
+        expect(csv).to include('2,Product,')
+      end
+
+      it 'handles boolean values' do
+        collection = [{ id: 1, active: true }, { id: 2, active: false }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('true')
+        # false is converted to empty string in CSV generation
+        expect(csv).to include('2,')
+      end
+
+      it 'handles very large numbers' do
+        collection = [{ id: 1, amount: 999_999_999_999.99 }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('999999999999.99')
+      end
+
+      it 'handles negative numbers' do
+        collection = [{ id: 1, balance: -100.50 }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('-100.5')
+      end
+
+      it 'handles unicode characters' do
+        collection = [{ id: 1, name: 'Café ☕', emoji: '🎉' }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('Café ☕')
+        expect(csv).to include('🎉')
+      end
+
+      it 'handles HTML tags in values' do
+        collection = [{ id: 1, content: '<script>alert("xss")</script>' }]
+        csv = controller.generate_csv(collection)
+
+        expect(csv).to include('<script>')
+      end
+
+      it 'handles empty strings' do
+        collection = [{ id: 1, name: '', description: 'Test' }]
+        csv = controller.generate_csv(collection)
+
+        # Empty strings are quoted in CSV
+        expect(csv).to include('1,"",Test')
+      end
+    end
+
+    describe '#generate_csv with column handling' do
+      it 'handles columns that do not exist in data' do
+        collection = [{ id: 1, name: 'Product' }]
+        csv = controller.generate_csv(collection, columns: [:id, :name, :nonexistent])
+
+        expect(csv).to include('Id,Name,Nonexistent')
+        expect(csv).to include('1,Product,')
+      end
+
+      it 'handles symbol and string keys mixed' do
+        collection = [{ 'id' => 1, :name => 'Product' }]
+        csv = controller.generate_csv(collection)
+
+        # Should handle both key types
+        expect(csv).to be_a(String)
+      end
+
+      it 'preserves column order when specified' do
+        collection = [{ id: 1, name: 'Product', price: 10 }]
+        csv = controller.generate_csv(collection, columns: [:price, :id, :name])
+
+        lines = csv.split("\n")
+        expect(lines.first).to eq('Price,Id,Name')
+      end
+    end
+
+    describe '#send_csv with edge cases' do
+      it 'handles empty collection' do
+        controller.send_csv([])
+
+        expect(controller.response_body).to eq('')
+      end
+
+      it 'handles filename without .csv extension' do
+        controller.send_csv([{ id: 1 }], filename: 'data')
+
+        expect(controller.response_options[:disposition]).to eq('attachment; filename="data"')
+      end
+
+      it 'handles filename with special characters' do
+        controller.send_csv([{ id: 1 }], filename: 'export_2025-01-15.csv')
+
+        expect(controller.response_options[:disposition]).to include('export_2025-01-15.csv')
+      end
+
+      it 'handles very long filenames' do
+        long_name = 'a' * 200 + '.csv'
+        controller.send_csv([{ id: 1 }], filename: long_name)
+
+        expect(controller.response_options[:disposition]).to include(long_name)
+      end
+    end
+
+    describe '#generate_csv with DateTime edge cases' do
+      it 'handles DateTime objects' do
+        datetime = DateTime.new(2025, 6, 15, 14, 30, 45)
+        collection = [{ id: 1, created: datetime }]
+        csv = controller.generate_csv(collection, columns: [:created])
+
+        expect(csv).to include('2025-06-15')
+      end
+
+      it 'handles date with timezone info' do
+        time = Time.new(2025, 1, 15, 10, 30, 0, '+09:00')
+        collection = [{ timestamp: time }]
+        csv = controller.generate_csv(collection, columns: [:timestamp])
+
+        expect(csv).to include('2025-01-15')
+      end
+    end
+  end
 end

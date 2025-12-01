@@ -226,6 +226,34 @@ RSpec.describe BetterController::Configuration do
     end
   end
 
+  describe '#page_config_class' do
+    it 'defaults to nil' do
+      expect(config.page_config_class).to be_nil
+    end
+
+    it 'can be set to BetterController::Config' do
+      config.page_config_class = BetterController::Config
+      expect(config.page_config_class).to eq(BetterController::Config)
+    end
+
+    it 'can be set to a custom class' do
+      custom_class = Class.new
+      config.page_config_class = custom_class
+      expect(config.page_config_class).to eq(custom_class)
+    end
+  end
+
+  describe '#page_config_class_enabled?' do
+    it 'returns false when page_config_class is nil' do
+      expect(config.page_config_class_enabled?).to be false
+    end
+
+    it 'returns true when page_config_class is set' do
+      config.page_config_class = BetterController::Config
+      expect(config.page_config_class_enabled?).to be true
+    end
+  end
+
   describe '#api_version' do
     it 'defaults to v1' do
       expect(config.api_version).to eq('v1')
@@ -256,6 +284,155 @@ RSpec.describe BetterController::Configuration do
     it 'allows direct setting and getting of turbo_enabled' do
       config.turbo_enabled = false
       expect(config.turbo_enabled).to be false
+    end
+  end
+
+  describe 'edge cases' do
+    describe 'api_version variations' do
+      it 'handles empty string version' do
+        config.api_version = ''
+        expect(config.api_version).to eq('')
+      end
+
+      it 'handles numeric-only version' do
+        config.api_version = '2'
+        expect(config.api_version).to eq('2')
+      end
+
+      it 'handles semantic versioning format' do
+        config.api_version = 'v1.2.3'
+        expect(config.api_version).to eq('v1.2.3')
+      end
+
+      it 'handles date-based version' do
+        config.api_version = '2025-01-15'
+        expect(config.api_version).to eq('2025-01-15')
+      end
+    end
+
+    describe 'pagination edge values' do
+      it 'handles per_page of 0' do
+        config.pagination_per_page = 0
+        expect(config.pagination_per_page).to eq(0)
+      end
+
+      it 'handles very large per_page' do
+        config.pagination_per_page = 10_000
+        expect(config.pagination_per_page).to eq(10_000)
+      end
+
+      it 'handles negative per_page' do
+        config.pagination_per_page = -1
+        expect(config.pagination_per_page).to eq(-1)
+      end
+    end
+
+    describe 'HTML configuration variations' do
+      it 'handles empty namespace' do
+        config.html_page_component_namespace = ''
+        expect(config.page_component_namespace).to eq('')
+      end
+
+      it 'handles deeply nested namespace' do
+        config.html_page_component_namespace = 'Components::Pages::Templates::Views'
+        expect(config.page_component_namespace).to eq('Components::Pages::Templates::Views')
+      end
+
+      it 'handles flash partial with subdirectory' do
+        config.html_flash_partial = 'layouts/partials/flash_messages'
+        expect(config.flash_partial).to eq('layouts/partials/flash_messages')
+      end
+
+      it 'handles form errors partial with subdirectory' do
+        config.html_form_errors_partial = 'shared/forms/errors'
+        expect(config.form_errors_partial).to eq('shared/forms/errors')
+      end
+    end
+
+    describe 'Turbo configuration variations' do
+      it 'handles custom default frame' do
+        config.turbo_default_frame = 'custom_modal'
+        expect(config.turbo_default_frame).to eq('custom_modal')
+      end
+
+      it 'handles nil default frame' do
+        config.turbo_default_frame = nil
+        expect(config.turbo_default_frame).to be_nil
+      end
+
+      it 'handles empty default frame' do
+        config.turbo_default_frame = ''
+        expect(config.turbo_default_frame).to eq('')
+      end
+    end
+
+    describe 'multiple configuration changes' do
+      it 'allows chaining multiple configurations' do
+        BetterController.configure do |c|
+          c.api_version = 'v3'
+          c.pagination_per_page = 100
+          c.turbo_enabled = false
+          c.html_page_component_namespace = 'Custom'
+        end
+
+        expect(config.api_version).to eq('v3')
+        expect(config.pagination_per_page).to eq(100)
+        expect(config.turbo_enabled).to be false
+        expect(config.page_component_namespace).to eq('Custom')
+      end
+
+      it 'preserves unmodified values when updating others' do
+        original_api_version = config.api_version
+
+        BetterController.configure do |c|
+          c.pagination_per_page = 50
+        end
+
+        expect(config.api_version).to eq(original_api_version)
+        expect(config.pagination_per_page).to eq(50)
+      end
+    end
+
+    describe 'wrapped_responses_class edge cases' do
+      it 'handles custom result class' do
+        custom_class = Class.new
+        config.wrapped_responses_class = custom_class
+        expect(config.wrapped_responses_class).to eq(custom_class)
+        expect(config.wrapped_responses_enabled?).to be true
+      end
+
+      it 'handles resetting to nil' do
+        config.wrapped_responses_class = BetterController::Result
+        config.wrapped_responses_class = nil
+        expect(config.wrapped_responses_enabled?).to be false
+      end
+    end
+
+    describe 'hash accessor with unknown keys' do
+      it 'returns nil for unknown keys' do
+        expect(config[:unknown_key]).to be_nil
+      end
+
+      it 'handles setting unknown keys gracefully' do
+        # Should not raise error but may not persist
+        expect { config[:unknown] = { value: true } }.not_to raise_error
+      end
+    end
+
+    describe '#to_h completeness' do
+      it 'includes all configuration sections' do
+        hash = config.to_h
+
+        expect(hash.keys).to include(:pagination, :serialization, :error_handling, :html, :turbo, :wrapped_responses)
+      end
+
+      it 'returns frozen-safe hash' do
+        hash = config.to_h
+
+        # Should be able to modify without affecting config
+        hash[:pagination] = { enabled: false }
+        expect(config.pagination[:enabled]).to be true
+      end
     end
   end
 end

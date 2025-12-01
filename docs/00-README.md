@@ -14,7 +14,7 @@ BetterController is a Ruby gem that provides a clean, declarative way to build R
 - **ResourcesController** - RESTful CRUD with minimal setup
 - **Response Helpers** - Standardized JSON API responses
 - **Turbo Support** - Built-in Turbo Frames and Streams integration
-- **ViewComponent Integration** - Render components with page_config
+- **ViewComponent Integration** - Render components with BetterPage
 - **CSV Export** - Generate and download CSV files
 - **Pagination** - Kaminari-based pagination with metadata
 - **Parameter Helpers** - Type-casting and validation utilities

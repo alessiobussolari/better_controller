@@ -20,7 +20,7 @@ module BetterController
       class_option :model, type: :string, desc: 'Specify the model name (defaults to singular of controller name)'
 
       def create_controller_file
-        template 'controller.rb', File.join('app/controllers', "#{file_name}_controller.rb")
+        template 'controller.rb', File.join('app/controllers', class_path, "#{file_name}_controller.rb")
       end
 
       private

@@ -29,6 +29,9 @@ module BetterController
     # Wrapped Responses
     attr_accessor :wrapped_responses_class
 
+    # Page Config
+    attr_accessor :page_config_class
+
     # API Version
     attr_accessor :api_version
 
@@ -58,6 +61,9 @@ module BetterController
 
       # Wrapped responses default (nil = disabled, use BetterController::Result to enable)
       @wrapped_responses_class = nil
+
+      # Page config default (nil = use BetterController::Config, set to BetterPage::Config to use external gem)
+      @page_config_class = nil
 
       # API version default
       @api_version = 'v1'
@@ -187,6 +193,12 @@ module BetterController
     # @return [Boolean]
     def wrapped_responses_enabled?
       !wrapped_responses_class.nil?
+    end
+
+    # Check if custom page config class is enabled
+    # @return [Boolean]
+    def page_config_class_enabled?
+      !page_config_class.nil?
     end
   end
 end

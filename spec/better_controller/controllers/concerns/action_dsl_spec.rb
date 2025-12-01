@@ -46,6 +46,14 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         'users'
       end
 
+      def action_name
+        @action_name ||= 'index'
+      end
+
+      def action_name=(name)
+        @action_name = name
+      end
+
       def respond_to
         yield(FormatResponder.new(self))
       end
@@ -210,21 +218,36 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
   describe '#resolve_page_config' do
     let(:config) { { service: ExampleService } }
 
-    it 'returns page_config from service result' do
-      result = { success: true, page_config: { type: :index, title: 'Users' } }
+    it 'returns nil when no page is configured' do
+      result = { success: true, resource: 'data' }
 
       page_config = controller.send(:resolve_page_config, config, result)
 
-      expect(page_config).to eq({ type: :index, title: 'Users' })
+      expect(page_config).to be_nil
     end
 
-    it 'applies page_config_modifier if present' do
-      result = { success: true, page_config: { type: :index, title: 'Users' } }
-      config[:page_config_modifier] = proc { |c| c[:title] = 'Modified' }
+    it 'calls execute_page when page is configured' do
+      mock_page_class = Class.new do
+        def initialize(data, user: nil)
+          @data = data
+          @user = user
+        end
 
-      page_config = controller.send(:resolve_page_config, config, result)
+        def index
+          { type: :index, title: 'Users' }
+        end
+      end
 
-      expect(page_config[:title]).to eq('Modified')
+      config_with_page = { page: mock_page_class }
+      result = { success: true, collection: [1, 2, 3] }
+
+      controller.action_name = 'index'
+      page_config = controller.send(:resolve_page_config, config_with_page, result)
+
+      # Hash results are now wrapped in BetterController::Config
+      expect(page_config).to be_a(BetterController::Config)
+      expect(page_config[:type]).to eq(:index)
+      expect(page_config[:title]).to eq('Users')
     end
 
     it 'returns nil when using component only' do
@@ -233,6 +256,27 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
       page_config = controller.send(:resolve_page_config, component_config, nil)
 
       expect(page_config).to be_nil
+    end
+  end
+
+  describe '#normalize_result' do
+    it 'returns empty hash for nil' do
+      expect(controller.send(:normalize_result, nil)).to eq({})
+    end
+
+    it 'returns hash as-is' do
+      result = { success: true }
+      expect(controller.send(:normalize_result, result)).to eq(result)
+    end
+
+    it 'converts object with to_h to hash' do
+      result_obj = double('result', to_h: { resource: 'data' })
+      expect(controller.send(:normalize_result, result_obj)).to eq({ resource: 'data' })
+    end
+
+    it 'returns empty hash for object without to_h' do
+      result_obj = double('result')
+      expect(controller.send(:normalize_result, result_obj)).to eq({})
     end
   end
 
@@ -585,22 +629,34 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
     end
 
     context 'when turbo_frame_request? returns true' do
+      let(:mock_view_component) do
+        Class.new do
+          attr_reader :config
+
+          def initialize(config:)
+            @config = config
+          end
+        end
+      end
+
       before do
         allow(controller).to receive(:respond_to?).and_call_original
         allow(controller).to receive(:respond_to?).with(:turbo_frame_request?, true).and_return(true)
         controller.define_singleton_method(:turbo_frame_request?) { true }
       end
 
-      it 'renders with layout: false for default render' do
+      it 'renders with Rails standard render when no klass present' do
         controller.send(:render_page_or_component, {})
 
-        expect(controller.rendered[:layout]).to eq(false)
+        expect(controller.rendered[:status]).to eq(:ok)
+        expect(controller.rendered).not_to have_key(:layout)
       end
 
-      it 'renders with layout: false when page_config present' do
-        controller.instance_variable_set(:@page_config, { type: :index })
+      it 'renders ViewComponent with layout: false when page_config has klass' do
+        controller.instance_variable_set(:@page_config, { type: :index, klass: mock_view_component })
         controller.send(:render_page_or_component, {})
 
+        expect(controller.rendered[:component]).to be_a(mock_view_component)
         expect(controller.rendered[:layout]).to eq(false)
       end
     end
@@ -612,9 +668,10 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         controller.define_singleton_method(:turbo_frame_request?) { false }
       end
 
-      it 'does not set layout option' do
+      it 'renders with Rails standard render (no layout specified)' do
         controller.send(:render_page_or_component, {})
 
+        expect(controller.rendered[:status]).to eq(:ok)
         expect(controller.rendered).not_to have_key(:layout)
       end
     end
@@ -625,9 +682,10 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         allow(controller).to receive(:respond_to?).with(:turbo_frame_request?, true).and_return(false)
       end
 
-      it 'does not set layout option' do
+      it 'renders with Rails standard render (no layout specified)' do
         controller.send(:render_page_or_component, {})
 
+        expect(controller.rendered[:status]).to eq(:ok)
         expect(controller.rendered).not_to have_key(:layout)
       end
     end
@@ -1095,6 +1153,147 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
       controller.send(:render_configured_component, config)
 
       expect(controller.rendered[:status]).to eq(:ok)
+    end
+  end
+
+  describe '#normalize_page_config' do
+    before do
+      BetterController.reset_config!
+    end
+
+    after do
+      BetterController.reset_config!
+    end
+
+    it 'returns nil for nil input' do
+      expect(controller.send(:normalize_page_config, nil)).to be_nil
+    end
+
+    it 'returns BetterController::Config as-is' do
+      config = BetterController::Config.new({ type: :index })
+
+      result = controller.send(:normalize_page_config, config)
+
+      expect(result).to be(config)
+      expect(result).to be_a(BetterController::Config)
+    end
+
+    it 'wraps Hash in BetterController::Config' do
+      hash = { type: :index, title: 'Users' }
+
+      result = controller.send(:normalize_page_config, hash)
+
+      expect(result).to be_a(BetterController::Config)
+      expect(result[:type]).to eq(:index)
+      expect(result[:title]).to eq('Users')
+    end
+
+    context 'with custom page_config_class configured' do
+      let(:custom_config_class) do
+        Class.new do
+          attr_reader :data
+
+          def initialize(data)
+            @data = data
+          end
+        end
+      end
+
+      before do
+        BetterController.configure do |config|
+          config.page_config_class = custom_config_class
+        end
+      end
+
+      it 'returns custom class instance as-is' do
+        custom_instance = custom_config_class.new({ type: :show })
+
+        result = controller.send(:normalize_page_config, custom_instance)
+
+        expect(result).to be(custom_instance)
+      end
+
+      it 'still returns BetterController::Config as-is' do
+        config = BetterController::Config.new({ type: :index })
+
+        result = controller.send(:normalize_page_config, config)
+
+        expect(result).to be(config)
+      end
+
+      it 'still wraps Hash in BetterController::Config when custom class not matched' do
+        hash = { type: :index }
+
+        result = controller.send(:normalize_page_config, hash)
+
+        expect(result).to be_a(BetterController::Config)
+      end
+    end
+
+    it 'returns other objects as-is' do
+      other_object = double('custom_config')
+
+      result = controller.send(:normalize_page_config, other_object)
+
+      expect(result).to be(other_object)
+    end
+  end
+
+  describe '#execute_page with normalize_page_config' do
+    let(:mock_page_class) do
+      Class.new do
+        def initialize(data, user: nil)
+          @data = data
+          @user = user
+        end
+
+        def index
+          { type: :index, title: 'Users List' }
+        end
+      end
+    end
+
+    before do
+      BetterController.reset_config!
+      controller.action_name = 'index'
+    end
+
+    after do
+      BetterController.reset_config!
+    end
+
+    it 'wraps hash result in BetterController::Config' do
+      result = { success: true, collection: [1, 2, 3] }
+
+      page_config = controller.send(:execute_page, mock_page_class, result)
+
+      expect(page_config).to be_a(BetterController::Config)
+      expect(page_config[:type]).to eq(:index)
+      expect(page_config[:title]).to eq('Users List')
+    end
+
+    context 'when page returns BetterController::Config' do
+      let(:config_returning_page_class) do
+        Class.new do
+          def initialize(data, user: nil)
+            @data = data
+            @user = user
+          end
+
+          def index
+            BetterController::Config.new({ type: :index, title: 'Direct Config' })
+          end
+        end
+      end
+
+      it 'returns the config as-is' do
+        result = { success: true, collection: [1, 2, 3] }
+
+        page_config = controller.send(:execute_page, config_returning_page_class, result)
+
+        expect(page_config).to be_a(BetterController::Config)
+        expect(page_config[:title]).to eq('Direct Config')
+      end
     end
   end
 end

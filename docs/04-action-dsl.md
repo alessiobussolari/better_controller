@@ -73,14 +73,88 @@ end
 
 ### page
 
-Define a page class for page_config:
+Define a Page class for UI configuration. The page receives data from the service result and generates page configuration.
 
 ```ruby
 action :show do
-  service Users::ShowService
-  page Users::ShowPage
+  service Users::ShowService  # → data (Hash or Result)
+  page Users::ShowPage        # → page config (Hash or Config object)
 end
 ```
+
+The page class is instantiated with service result data and current_user:
+
+```ruby
+# Signature: Page.new(data, user: current_user).action_name
+```
+
+#### Page Return Types
+
+Pages can return different types, all automatically normalized:
+
+**1. Return Hash (simplest - automatically wrapped)**
+
+```ruby
+class Users::IndexPage
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def index
+    { header: { title: 'Users' }, table: { items: @data } }
+  end
+end
+# Result: Hash is wrapped in BetterController::Config
+```
+
+**2. Return BetterController::Config (standalone with meta)**
+
+```ruby
+class Users::ShowPage
+  def initialize(data, user: nil)
+    @data = data
+  end
+
+  def show
+    BetterController::Config.new(
+      { header: { title: @data.name }, details: { resource: @data } },
+      meta: { page_type: :show, editable: @data.editable? }
+    )
+  end
+end
+# Result: BetterController::Config returned as-is
+```
+
+**3. Return BetterPage::Config (with BetterPage gem)**
+
+```ruby
+class Users::ShowPage < BetterPage::Base
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def show
+    BetterPage::Config.new(
+      { header: { title: @data.name }, details: { resource: @data } },
+      meta: { page_type: :show }
+    )
+  end
+end
+# Result: BetterPage::Config returned as-is (requires page_config_class configuration)
+```
+
+#### Normalization Behavior
+
+| Page Returns | @page_config Result |
+|--------------|---------------------|
+| `Hash` | `BetterController::Config.new(hash)` |
+| `BetterController::Config` | Returned as-is |
+| `BetterPage::Config` (if configured) | Returned as-is |
+| `nil` | `nil` |
+
+**Note:** Services handle business logic and return data. Pages handle UI configuration. These are separate concerns.
 
 ### component
 
@@ -191,11 +265,13 @@ end
 ```ruby
 on_success do
   html { redirect_to users_path }
-  html { render_page }  # Render using page_config
+  html { render_page }  # Uses page config from Page class
   html { render_page status: :created }
   html { render_component UserComponent, locals: { user: @result[:resource] } }
 end
 ```
+
+**Note:** For Turbo Frame requests, if `@page_config` has a `klass` attribute (ViewComponent class), BetterController automatically renders the component with `layout: false`. For normal HTML requests, it uses Rails standard render (looks for .html.erb view).
 
 ## Error Handlers
 
@@ -294,7 +370,7 @@ After action execution, these instance variables are available:
 | `@result` | Service result (unwrapped if using wrapped responses) |
 | `@error` | Exception if service failed |
 | `@error_type` | Classified error type (`:validation`, `:not_found`, etc.) |
-| `@page_config` | Page configuration for rendering |
+| `@page_config` | Page configuration for rendering (`BetterController::Config` or `BetterPage::Config`) |
 
 ## Complete Example
 

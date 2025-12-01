@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe ProductsController, type: :controller do
+RSpec.describe ActionDslProductsController, type: :controller do
   describe 'Turbo Frame requests' do
     describe 'GET #index with Turbo-Frame header' do
       before do

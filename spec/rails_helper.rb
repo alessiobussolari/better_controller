@@ -29,21 +29,24 @@ SimpleCov.start do
 
   add_filter %r{^/config/}
   add_filter %r{^/db/}
+  add_filter 'spec/'
+  # Exclude generator templates (ERB files, not executable Ruby)
+  add_filter 'lib/generators/better_controller/templates/'
+  # Exclude version file (only defines VERSION constant)
+  add_filter 'lib/better_controller/version.rb'
 
   add_group 'Controllers', 'lib/better_controller/controllers'
   add_group 'Utils', 'lib/better_controller/utils'
   add_group 'DSL', 'lib/better_controller/dsl'
   add_group 'Rendering', 'lib/better_controller/rendering'
-  add_group 'Generators', 'lib/generators/'
+  add_group 'Errors', 'lib/better_controller/errors'
+  add_group 'Generators', 'lib/generators/better_controller'
+  add_group 'Core', %w[lib/better_controller.rb lib/better_controller_api.rb lib/better_controller/railtie.rb]
 
   track_files '{lib}/**/*.rb'
 
-  add_filter 'spec/'
-  add_filter 'lib/better_controller.rb'
-  add_filter 'lib/better_controller/railtie.rb'
-  add_filter 'lib/better_controller/version.rb'
-  add_filter 'lib/better_controller_api.rb'
-  add_filter %r{lib/generators/}
+  # Coverage threshold
+  minimum_coverage 95
 end
 
 # Run migrations in memory
@@ -52,6 +55,8 @@ ActiveRecord::Schema.define do
   create_table :examples, force: true do |t|
     t.string :name
     t.string :email
+    t.text :description
+    t.string :status, default: 'active'
     t.timestamps
   end
 
@@ -59,6 +64,37 @@ ActiveRecord::Schema.define do
     t.string :title
     t.text :body
     t.boolean :published, default: false
+    t.timestamps
+  end
+
+  create_table :users, force: true do |t|
+    t.string :name
+    t.string :email
+    t.timestamps
+  end
+
+  create_table :comments, force: true do |t|
+    t.references :article
+    t.string :author
+    t.text :body
+    t.timestamps
+  end
+
+  create_table :tasks, force: true do |t|
+    t.string :title
+    t.text :description
+    t.string :status, default: 'pending'
+    t.integer :priority, default: 0
+    t.timestamps
+  end
+
+  create_table :products, force: true do |t|
+    t.string :name
+    t.string :sku
+    t.decimal :price, precision: 10, scale: 2
+    t.string :category
+    t.boolean :active, default: true
+    t.integer :stock_quantity, default: 0
     t.timestamps
   end
 end

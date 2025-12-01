@@ -22,24 +22,27 @@ SimpleCov.start do
 
   add_filter %r{^/config/}
   add_filter %r{^/db/}
+  add_filter 'spec/'
+  # Exclude generator templates (ERB files, not executable Ruby)
+  add_filter 'lib/generators/better_controller/templates/'
+  # Exclude version file (only defines VERSION constant)
+  add_filter 'lib/better_controller/version.rb'
 
   add_group 'Controllers', 'lib/better_controller/controllers'
   add_group 'Utils', 'lib/better_controller/utils'
   add_group 'DSL', 'lib/better_controller/dsl'
   add_group 'Rendering', 'lib/better_controller/rendering'
-  add_group 'Generators', 'lib/generators/'
+  add_group 'Errors', 'lib/better_controller/errors'
+  add_group 'Generators', 'lib/generators/better_controller'
+  add_group 'Core', %w[lib/better_controller.rb lib/better_controller_api.rb lib/better_controller/railtie.rb]
 
   track_files '{lib}/**/*.rb'
 
-  add_filter 'spec/'
-  add_filter 'lib/better_controller.rb'
-  add_filter 'lib/better_controller/railtie.rb'
-  add_filter 'lib/better_controller/version.rb'
-  add_filter 'lib/better_controller_api.rb'
-  add_filter %r{lib/generators/}
+  # Coverage threshold
+  minimum_coverage 95
 end
 
-# Only set up fake Rails if not running integration tests
+# Set up fake Rails only if not running integration tests and Rails isn't already defined
 unless RUNNING_INTEGRATION_TESTS
   # Load required libraries
   require 'pathname'
@@ -90,11 +93,16 @@ unless RUNNING_INTEGRATION_TESTS
   require 'active_support/all'
   require 'active_model'
   require 'action_controller'
+end
 
-  # Load the gem under test
-  require 'better_controller'
+# Always load the gem under test
+# Note: We need to always require this even if BetterController is defined because
+# the gemspec's require_relative 'lib/better_controller/version' only defines the
+# BetterController module with VERSION, not the full gem.
+require 'better_controller'
 
-  # Create a support directory and load all files in it
+# Load support files for unit tests (integration tests load them via rails_helper)
+unless RUNNING_INTEGRATION_TESTS
   Dir[File.join(File.dirname(__FILE__), 'support', '**', '*.rb')].sort.each { |f| require f }
 end
 
