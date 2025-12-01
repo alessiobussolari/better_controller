@@ -298,6 +298,28 @@ end
 
 ## ⚡ Turbo Support
 
+### Turbo Frame Handler
+
+Handle Turbo Frame requests with explicit control:
+
+```ruby
+on_success do
+  html { render_page }
+
+  turbo_frame do
+    component Users::ListComponent, locals: { title: 'Users' }
+  end
+end
+```
+
+The `turbo_frame {}` handler supports:
+- `component(klass, locals: {})` - Render a ViewComponent
+- `partial(path, locals: {})` - Render a partial
+- `render_page(status: :ok)` - Render using page config
+- `layout(true/false)` - Control layout rendering (default: false)
+
+When no `turbo_frame {}` handler is defined, it falls back to `html {}`.
+
 ### Turbo Stream Actions
 
 Build Turbo Stream responses declaratively:

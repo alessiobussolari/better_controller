@@ -82,6 +82,14 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         TurboStreamMock.new
       end
 
+      def request
+        @request ||= OpenStruct.new(headers: {})
+      end
+
+      def request=(req)
+        @request = req
+      end
+
       def helpers
         OpenStruct.new(dom_id: ->(obj, prefix = nil) { "#{prefix}_#{obj.class.name.downcase}_#{obj.id}" })
       end
@@ -652,12 +660,14 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         expect(controller.rendered).not_to have_key(:layout)
       end
 
-      it 'renders ViewComponent with layout: false when page_config has klass' do
+      it 'renders with Rails standard render even when page_config has klass (use turbo_frame DSL for explicit control)' do
         controller.instance_variable_set(:@page_config, { type: :index, klass: mock_view_component })
         controller.send(:render_page_or_component, {})
 
-        expect(controller.rendered[:component]).to be_a(mock_view_component)
-        expect(controller.rendered[:layout]).to eq(false)
+        # With new explicit DSL, render_page_or_component always does Rails standard render
+        # Use turbo_frame {} DSL handler for explicit Turbo Frame control
+        expect(controller.rendered[:status]).to eq(:ok)
+        expect(controller.rendered).not_to have_key(:component)
       end
     end
 
@@ -809,6 +819,267 @@ RSpec.describe BetterController::Controllers::Concerns::ActionDsl do
         controller.send(:handle_json_success, config, handlers)
 
         expect(controller.rendered[:json]).to eq({ success: true, data: 'test' })
+      end
+    end
+  end
+
+  describe 'Turbo Frame DSL handling' do
+    let(:mock_component_class) do
+      Class.new do
+        attr_reader :args
+        def initialize(**args)
+          @args = args
+        end
+      end
+    end
+
+    describe '#handle_html_success with turbo_frame handler' do
+      let(:config) { {} }
+
+      before do
+        # Simulate Turbo Frame request
+        controller.request = OpenStruct.new(headers: { 'Turbo-Frame' => 'users_list' })
+      end
+
+      context 'when turbo_frame handler is defined with component' do
+        it 'renders the component with layout: false' do
+          handlers = {
+            turbo_frame: {
+              config: { type: :component, klass: mock_component_class, locals: { title: 'Users' } },
+              layout: false
+            }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          expect(controller.rendered[:component]).to be_a(mock_component_class)
+          expect(controller.rendered[:layout]).to eq(false)
+        end
+
+        it 'passes locals to component' do
+          handlers = {
+            turbo_frame: {
+              config: { type: :component, klass: mock_component_class, locals: { title: 'Users', count: 10 } },
+              layout: false
+            }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          component = controller.rendered[:component]
+          expect(component.args[:title]).to eq('Users')
+          expect(component.args[:count]).to eq(10)
+        end
+
+        it 'respects custom layout setting' do
+          handlers = {
+            turbo_frame: {
+              config: { type: :component, klass: mock_component_class, locals: {} },
+              layout: true
+            }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          expect(controller.rendered[:layout]).to eq(true)
+        end
+      end
+
+      context 'when turbo_frame handler is defined with partial' do
+        it 'renders the partial with layout: false' do
+          handlers = {
+            turbo_frame: {
+              config: { type: :partial, path: 'users/list', locals: { users: [] } },
+              layout: false
+            }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          expect(controller.rendered[:partial]).to eq('users/list')
+          expect(controller.rendered[:locals]).to eq({ users: [] })
+          expect(controller.rendered[:layout]).to eq(false)
+        end
+      end
+
+      context 'when turbo_frame handler is defined with render_page' do
+        it 'renders the page config' do
+          page_config = { type: :index, title: 'Users' }
+          controller.instance_variable_set(:@page_config, page_config)
+
+          handlers = {
+            turbo_frame: {
+              config: { type: :page, status: :ok },
+              layout: false
+            }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          expect(controller.rendered[:status]).to eq(:ok)
+          expect(controller.rendered[:layout]).to eq(false)
+        end
+
+        it 'uses custom status from render_page' do
+          handlers = {
+            turbo_frame: {
+              config: { type: :page, status: :created },
+              layout: false
+            }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          expect(controller.rendered[:status]).to eq(:created)
+        end
+      end
+
+      context 'when no turbo_frame handler but html handler exists' do
+        it 'falls back to html handler (Rails standard behavior)' do
+          html_called = false
+          handlers = {
+            html: -> { html_called = true }
+          }
+
+          controller.send(:handle_html_success, config, handlers)
+
+          expect(html_called).to be true
+        end
+      end
+    end
+
+    describe '#is_turbo_frame_request?' do
+      context 'when Turbo-Frame header is present' do
+        before do
+          controller.request = OpenStruct.new(headers: { 'Turbo-Frame' => 'users_list' })
+        end
+
+        it 'returns true' do
+          expect(controller.send(:is_turbo_frame_request?)).to be true
+        end
+      end
+
+      context 'when Turbo-Frame header is absent' do
+        before do
+          controller.request = OpenStruct.new(headers: {})
+        end
+
+        it 'returns false' do
+          expect(controller.send(:is_turbo_frame_request?)).to be false
+        end
+      end
+
+      context 'when request is not available' do
+        before do
+          # Remove request method
+          controller.singleton_class.undef_method(:request) if controller.respond_to?(:request)
+        end
+
+        it 'returns false without raising' do
+          expect(controller.send(:is_turbo_frame_request?)).to be false
+        end
+      end
+    end
+
+    describe '#handle_turbo_frame_response' do
+      context 'with component config' do
+        it 'renders component with layout false by default' do
+          frame_config = {
+            config: { type: :component, klass: mock_component_class, locals: {} },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_response, frame_config)
+
+          expect(controller.rendered[:component]).to be_a(mock_component_class)
+          expect(controller.rendered[:layout]).to eq(false)
+        end
+      end
+
+      context 'with partial config' do
+        it 'renders partial with locals' do
+          frame_config = {
+            config: { type: :partial, path: 'users/card', locals: { user: { name: 'John' } } },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_response, frame_config)
+
+          expect(controller.rendered[:partial]).to eq('users/card')
+          expect(controller.rendered[:locals]).to eq({ user: { name: 'John' } })
+        end
+      end
+
+      context 'with page config' do
+        it 'renders page config with status' do
+          page = { type: :show }
+          controller.instance_variable_set(:@page_config, page)
+
+          frame_config = {
+            config: { type: :page, status: :ok },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_response, frame_config)
+
+          expect(controller.rendered[:status]).to eq(:ok)
+        end
+      end
+    end
+
+    describe '#handle_turbo_frame_error_response' do
+      context 'with component config' do
+        it 'renders component with error status' do
+          frame_config = {
+            config: { type: :component, klass: mock_component_class, locals: {} },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_error_response, frame_config, :unprocessable_entity)
+
+          expect(controller.rendered[:component]).to be_a(mock_component_class)
+          expect(controller.rendered[:status]).to eq(:unprocessable_entity)
+        end
+      end
+
+      context 'with partial config' do
+        it 'renders partial with error status' do
+          frame_config = {
+            config: { type: :partial, path: 'errors/form', locals: { errors: ['Invalid'] } },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_error_response, frame_config, :unprocessable_entity)
+
+          expect(controller.rendered[:partial]).to eq('errors/form')
+          expect(controller.rendered[:status]).to eq(:unprocessable_entity)
+        end
+      end
+
+      context 'with page config' do
+        it 'uses status from frame config when specified' do
+          frame_config = {
+            config: { type: :page, status: :bad_request },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_error_response, frame_config, :unprocessable_entity)
+
+          # Status from frame config takes precedence when specified
+          expect(controller.rendered[:status]).to eq(:bad_request)
+        end
+
+        it 'falls back to error status when config status is nil' do
+          frame_config = {
+            config: { type: :page, status: nil },
+            layout: false
+          }
+
+          controller.send(:handle_turbo_frame_error_response, frame_config, :unprocessable_entity)
+
+          # Falls back to error status
+          expect(controller.rendered[:status]).to eq(:unprocessable_entity)
+        end
       end
     end
   end

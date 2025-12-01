@@ -17,7 +17,7 @@ Understanding the difference is important:
 - **Single target**: Updates one element at a time
 - **Automatic**: Browser sends `Turbo-Frame` header, Rails handles the rest
 - **Navigation**: When you click a link inside a `<turbo-frame>`, only that frame updates
-- **ViewComponent support**: When `@page_config` has a `klass` attribute, BetterController renders the ViewComponent with `layout: false`
+- **Explicit DSL**: Use `turbo_frame {}` handler for explicit control over rendering
 
 ```erb
 <%# In your view %>
@@ -27,21 +27,6 @@ Understanding the difference is important:
 
 <%# Links inside target the same frame automatically %>
 <%= link_to 'Edit', edit_user_path(@user) %>
-```
-
-**Note:** When using the Action DSL with a Page class that returns a `klass` attribute (ViewComponent class), BetterController automatically renders the component for Turbo Frame requests:
-
-```ruby
-action :edit do
-  service Users::EditService
-  page Users::EditPage  # Returns config with klass: EditComponent
-
-  on_success do
-    html { render_page }
-    # For Turbo Frame + klass: renders EditComponent with layout: false
-    # For normal HTML: uses Rails standard render (edit.html.erb)
-  end
-end
 ```
 
 ### Turbo Streams
@@ -57,6 +42,120 @@ turbo_stream do
   update :users_count, partial: 'count'      # Update counter
   remove :empty_state                        # Remove empty message
   flash type: :notice, message: 'Created!'   # Show flash
+end
+```
+
+## Turbo Frame DSL
+
+BetterController provides an explicit `turbo_frame {}` DSL handler for complete control over Turbo Frame requests. This follows the same pattern as `html {}`, `json {}`, and `turbo_stream {}` handlers.
+
+### Basic Usage
+
+```ruby
+action :index do
+  service Users::IndexService
+  page Users::IndexPage
+
+  on_success do
+    html { render_page }
+
+    turbo_frame do
+      component Users::ListComponent, locals: { title: 'Users' }
+    end
+
+    turbo_stream do
+      replace :users_list, component: Users::ListComponent
+    end
+
+    json { render json: @result }
+  end
+end
+```
+
+### Turbo Frame Builder Options
+
+The `turbo_frame {}` block supports three rendering modes:
+
+#### Render a ViewComponent
+
+```ruby
+turbo_frame do
+  component Users::ListComponent, locals: { users: @users, count: @total }
+end
+```
+
+#### Render a Partial
+
+```ruby
+turbo_frame do
+  partial 'users/list', locals: { users: @users }
+end
+```
+
+#### Render Page Config
+
+```ruby
+turbo_frame do
+  render_page status: :ok
+end
+```
+
+### Layout Control
+
+By default, Turbo Frame responses render without layout (`layout: false`). You can override this:
+
+```ruby
+turbo_frame do
+  component Users::ListComponent
+  layout true  # Include layout in response
+end
+```
+
+### Fallback Behavior
+
+When a Turbo Frame request is received but no `turbo_frame {}` handler is defined, BetterController falls back to the `html {}` handler. This follows Rails standard behavior where Turbo Frame requests have the same Accept header as HTML requests.
+
+| Request Type | Handler | Fallback |
+|--------------|---------|----------|
+| HTML normale | `html {}` | Rails standard render |
+| Turbo Frame | `turbo_frame {}` | `html {}` (Rails standard) |
+| Turbo Stream | `turbo_stream {}` | Default turbo streams |
+| JSON | `json {}` | Render json |
+
+### Complete Example
+
+```ruby
+action :index do
+  service Users::IndexService
+  page Users::IndexPage
+
+  on_success do
+    html { render_page }
+
+    turbo_frame do
+      component Users::ListComponent, locals: { title: 'Users' }
+    end
+
+    turbo_stream do
+      replace :users_list, component: Users::ListComponent
+      flash type: :notice, message: 'Loaded!'
+    end
+
+    json { render json: @result }
+  end
+
+  on_error :validation do
+    html { render_page status: :unprocessable_entity }
+
+    turbo_frame do
+      partial 'users/error_form', locals: { errors: @result[:errors] }
+    end
+
+    turbo_stream do
+      replace :user_form, component: UserFormComponent
+      form_errors errors: @result[:errors]
+    end
+  end
 end
 ```
 
@@ -103,67 +202,6 @@ Check if request is from a Turbo Native mobile app:
 if turbo_native_app?
   # Adjust response for native app
 end
-```
-
-## ViewComponent Rendering for Turbo Frames
-
-When using BetterPage or a page config that includes a `klass` attribute, BetterController automatically renders the ViewComponent for Turbo Frame requests.
-
-### How it works
-
-1. Request comes in as Turbo Frame (header `Turbo-Frame` present)
-2. BetterController checks if `@page_config` has a `klass` attribute
-3. If yes: instantiates and renders the ViewComponent with `layout: false`
-4. If no: uses Rails standard render (looks for .html.erb view)
-
-### Rails Convention
-
-**Important:** For normal HTML requests (non-Turbo Frame), BetterController uses Rails standard `render`. This means:
-- You **must create** the corresponding `.html.erb` view file (e.g., `index.html.erb`, `show.html.erb`)
-- If the view file doesn't exist, Rails will raise a `ActionView::MissingTemplate` error
-- ViewComponent is **only** used automatically for Turbo Frame requests when `@page_config` has a `klass` attribute
-
-This follows Rails conventions - the full page is rendered via ERB templates, while Turbo Frame updates can use ViewComponents for better encapsulation.
-
-### Example with BetterPage
-
-```ruby
-# Page class returns BetterPage::Config with klass
-class Users::IndexPage < BetterPage::IndexBasePage
-  def index
-    build_page  # Returns Config with klass = IndexViewComponent
-  end
-end
-
-# Controller
-action :index do
-  service Users::IndexService
-  page Users::IndexPage
-end
-```
-
-For Turbo Frame requests with a `klass` in page_config:
-```ruby
-# BetterController automatically does:
-render IndexViewComponent.new(config: @page_config), layout: false
-```
-
-For normal HTML requests (non-Turbo Frame):
-```ruby
-# BetterController uses Rails standard render:
-render status: :ok  # Looks for index.html.erb
-```
-
-### Manual Page Config with klass
-
-```ruby
-@page_config = {
-  type: :index,
-  items: @users,
-  klass: Users::IndexComponent  # ViewComponent class
-}
-# For Turbo Frame: renders Users::IndexComponent.new(config: @page_config)
-# For normal HTML: renders with Rails standard render
 ```
 
 ## Stream Builder Methods
@@ -310,11 +348,11 @@ def edit
 end
 ```
 
-**Note:** When using the Action DSL with a Page class that has a `klass` attribute, BetterController handles Turbo Frame rendering automatically. The `render_in_frame` helper is provided for manual controller implementations.
+**Note:** When using the Action DSL, prefer the explicit `turbo_frame {}` handler for better control and clarity.
 
 ## Using with Action DSL
 
-The Action DSL integrates Turbo Streams seamlessly:
+The Action DSL integrates Turbo Frames and Streams seamlessly:
 
 ```ruby
 action :create do
@@ -322,6 +360,11 @@ action :create do
 
   on_success do
     html { redirect_to users_path }
+
+    turbo_frame do
+      component UserRowComponent
+    end
+
     turbo_stream do
       prepend :users_list, component: UserRowComponent
       update :users_count, partial: 'users/count'
@@ -330,6 +373,12 @@ action :create do
   end
 
   on_error :validation do
+    html { render_page status: :unprocessable_entity }
+
+    turbo_frame do
+      partial 'users/form', locals: { errors: @result[:errors] }
+    end
+
     turbo_stream do
       replace :user_form, component: UserFormComponent
       form_errors errors: @result[:errors]

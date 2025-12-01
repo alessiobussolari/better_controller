@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Turbo Frame DSL** - New explicit `turbo_frame {}` handler for Turbo Frame requests
+  - `component(klass, locals: {})` - Render a ViewComponent
+  - `partial(path, locals: {})` - Render a partial
+  - `render_page(status: :ok)` - Render using page config
+  - `layout(true/false)` - Control layout rendering (default: false)
+- TurboFrameBuilder class for building Turbo Frame responses
+- Fallback behavior: turbo_frame → html when no handler defined
+
+### Changed
+- Test coverage improved to 761 examples
+
 ## [0.3.0] - 2025-11-30
 
 ### Changed

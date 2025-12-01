@@ -17,7 +17,7 @@ Understanding the difference is important:
 - **Single target**: Updates one element at a time
 - **Automatic**: Browser sends `Turbo-Frame` header, Rails handles the rest
 - **Navigation**: When you click a link inside a `<turbo-frame>`, only that frame updates
-- **ViewComponent support**: When `@page_config` has a `klass` attribute, BetterController renders the ViewComponent with `layout: false`
+- **Explicit DSL**: Use `turbo_frame {}` handler for explicit control over rendering
 
 ```erb
 <%# In your view %>
@@ -27,21 +27,6 @@ Understanding the difference is important:
 
 <%# Links inside target the same frame automatically %>
 <%= link_to 'Edit', edit_user_path(@user) %>
-```
-
-**Note:** When using the Action DSL with a Page class that returns a `klass` attribute (ViewComponent class), BetterController automatically renders the component for Turbo Frame requests:
-
-```ruby
-action :edit do
-  service Users::EditService
-  page Users::EditPage  # Returns config with klass: EditComponent
-
-  on_success do
-    html { render_page }
-    # For Turbo Frame + klass: renders EditComponent with layout: false
-    # For normal HTML: uses Rails standard render (edit.html.erb)
-  end
-end
 ```
 
 ### Turbo Streams
@@ -60,6 +45,120 @@ turbo_stream do
 end
 ```
 
+## Turbo Frame DSL
+
+BetterController provides an explicit `turbo_frame {}` DSL handler for complete control over Turbo Frame requests. This follows the same pattern as `html {}`, `json {}`, and `turbo_stream {}` handlers.
+
+### Basic Usage
+
+```ruby
+action :index do
+  service Users::IndexService
+  page Users::IndexPage
+
+  on_success do
+    html { render_page }
+
+    turbo_frame do
+      component Users::ListComponent, locals: { title: 'Users' }
+    end
+
+    turbo_stream do
+      replace :users_list, component: Users::ListComponent
+    end
+
+    json { render json: @result }
+  end
+end
+```
+
+### Turbo Frame Builder Options
+
+The `turbo_frame {}` block supports three rendering modes:
+
+#### Render a ViewComponent
+
+```ruby
+turbo_frame do
+  component Users::ListComponent, locals: { users: @users, count: @total }
+end
+```
+
+#### Render a Partial
+
+```ruby
+turbo_frame do
+  partial 'users/list', locals: { users: @users }
+end
+```
+
+#### Render Page Config
+
+```ruby
+turbo_frame do
+  render_page status: :ok
+end
+```
+
+### Layout Control
+
+By default, Turbo Frame responses render without layout (`layout: false`). You can override this:
+
+```ruby
+turbo_frame do
+  component Users::ListComponent
+  layout true  # Include layout in response
+end
+```
+
+### Fallback Behavior
+
+When a Turbo Frame request is received but no `turbo_frame {}` handler is defined, BetterController falls back to the `html {}` handler. This follows Rails standard behavior where Turbo Frame requests have the same Accept header as HTML requests.
+
+| Request Type | Handler | Fallback |
+|--------------|---------|----------|
+| HTML normale | `html {}` | Rails standard render |
+| Turbo Frame | `turbo_frame {}` | `html {}` (Rails standard) |
+| Turbo Stream | `turbo_stream {}` | Default turbo streams |
+| JSON | `json {}` | Render json |
+
+### Complete Example
+
+```ruby
+action :index do
+  service Users::IndexService
+  page Users::IndexPage
+
+  on_success do
+    html { render_page }
+
+    turbo_frame do
+      component Users::ListComponent, locals: { title: 'Users' }
+    end
+
+    turbo_stream do
+      replace :users_list, component: Users::ListComponent
+      flash type: :notice, message: 'Loaded!'
+    end
+
+    json { render json: @result }
+  end
+
+  on_error :validation do
+    html { render_page status: :unprocessable_entity }
+
+    turbo_frame do
+      partial 'users/error_form', locals: { errors: @result[:errors] }
+    end
+
+    turbo_stream do
+      replace :user_form, component: UserFormComponent
+      form_errors errors: @result[:errors]
+    end
+  end
+end
+```
+
 ## Detection Methods
 
 ### turbo_frame_request?
@@ -74,8 +173,6 @@ else
 end
 ```
 
---------------------------------
-
 ### turbo_stream_request?
 
 Check if the request accepts Turbo Streams:
@@ -88,8 +185,6 @@ else
 end
 ```
 
---------------------------------
-
 ### current_turbo_frame
 
 Get the ID of the requesting Turbo Frame:
@@ -98,8 +193,6 @@ Get the ID of the requesting Turbo Frame:
 frame_id = current_turbo_frame
 # => "user_form" (from Turbo-Frame header)
 ```
-
---------------------------------
 
 ### turbo_native_app?
 
@@ -111,82 +204,13 @@ if turbo_native_app?
 end
 ```
 
---------------------------------
-
-## ViewComponent Rendering for Turbo Frames
-
-When using BetterPage or a page config that includes a `klass` attribute, BetterController automatically renders the ViewComponent for Turbo Frame requests.
-
-### How it works
-
-1. Request comes in as Turbo Frame (header `Turbo-Frame` present)
-2. BetterController checks if `@page_config` has a `klass` attribute
-3. If yes: instantiates and renders the ViewComponent with `layout: false`
-4. If no: uses Rails standard render (looks for .html.erb view)
-
---------------------------------
-
-### Rails Convention
-
-**Important:** For normal HTML requests (non-Turbo Frame), BetterController uses Rails standard `render`. This means:
-- You **must create** the corresponding `.html.erb` view file (e.g., `index.html.erb`, `show.html.erb`)
-- If the view file doesn't exist, Rails will raise a `ActionView::MissingTemplate` error
-- ViewComponent is **only** used automatically for Turbo Frame requests when `@page_config` has a `klass` attribute
-
-This follows Rails conventions - the full page is rendered via ERB templates, while Turbo Frame updates can use ViewComponents for better encapsulation.
-
---------------------------------
-
-### Example with BetterPage
-
-```ruby
-# Page class returns BetterPage::Config with klass
-class Users::IndexPage < BetterPage::IndexBasePage
-  def index
-    build_page  # Returns Config with klass = IndexViewComponent
-  end
-end
-
-# Controller
-action :index do
-  service Users::IndexService
-  page Users::IndexPage
-end
-```
-
-For Turbo Frame requests with a `klass` in page_config:
-```ruby
-# BetterController automatically does:
-render IndexViewComponent.new(config: @page_config), layout: false
-```
-
-For normal HTML requests (non-Turbo Frame):
-```ruby
-# BetterController uses Rails standard render:
-render status: :ok  # Looks for index.html.erb
-```
-
---------------------------------
-
-### Manual Page Config with klass
-
-```ruby
-@page_config = {
-  type: :index,
-  items: @users,
-  klass: Users::IndexComponent  # ViewComponent class
-}
-# For Turbo Frame: renders Users::IndexComponent.new(config: @page_config)
-# For normal HTML: renders with Rails standard render
-```
-
---------------------------------
-
 ## Stream Builder Methods
 
 Build individual Turbo Streams:
 
 ### stream_append
+
+Append content to a target:
 
 ```ruby
 stream_append(:users_list, partial: 'users/user', locals: { user: @user })
@@ -194,53 +218,53 @@ stream_append(:users_list, component: UserRowComponent)
 stream_append(:notifications, html: '<div>New notification</div>')
 ```
 
---------------------------------
-
 ### stream_prepend
+
+Prepend content to a target:
 
 ```ruby
 stream_prepend(:messages, partial: 'messages/message')
 ```
 
---------------------------------
-
 ### stream_replace
+
+Replace an entire element:
 
 ```ruby
 stream_replace(:user_1, partial: 'users/user', locals: { user: @user })
 stream_replace(@user, component: UserCardComponent)  # Uses dom_id(@user)
 ```
 
---------------------------------
-
 ### stream_update
+
+Update element's inner HTML:
 
 ```ruby
 stream_update(:counter, html: '<span>42</span>')
 stream_update(:status, partial: 'shared/status')
 ```
 
---------------------------------
-
 ### stream_remove
+
+Remove an element:
 
 ```ruby
 stream_remove(:notification_5)
 stream_remove(@user)  # Uses dom_id(@user)
 ```
 
---------------------------------
-
 ### stream_before / stream_after
+
+Insert content before or after a target:
 
 ```ruby
 stream_before(:user_5, partial: 'users/user', locals: { user: @new_user })
 stream_after(:header, component: AlertComponent)
 ```
 
---------------------------------
-
 ### stream_flash
+
+Update flash message:
 
 ```ruby
 stream_flash(type: :notice, message: 'User created successfully!')
@@ -249,9 +273,9 @@ stream_flash(type: :alert, message: 'Something went wrong')
 
 Uses the `shared/flash` partial by default.
 
---------------------------------
-
 ### stream_form_errors
+
+Update form errors display:
 
 ```ruby
 stream_form_errors(@user.errors)
@@ -260,11 +284,11 @@ stream_form_errors(@user.errors, target: :custom_errors)
 
 Uses the `shared/form_errors` partial by default.
 
---------------------------------
-
 ## Rendering Multiple Streams
 
 ### render_streams
+
+Render multiple streams at once:
 
 ```ruby
 def create
@@ -278,9 +302,9 @@ def create
 end
 ```
 
---------------------------------
-
 ### respond_with_turbo_stream
+
+Conditionally respond with Turbo Streams:
 
 ```ruby
 def update
@@ -295,11 +319,11 @@ end
 
 Falls back to normal rendering if not a Turbo Stream request.
 
---------------------------------
-
 ## Turbo-Compatible Redirect
 
 ### turbo_redirect_to
+
+Redirect with Turbo-compatible status code (303):
 
 ```ruby
 def create
@@ -310,8 +334,6 @@ end
 # With custom options
 turbo_redirect_to user_path(@user), notice: 'Created!'
 ```
-
---------------------------------
 
 ## Rendering in Frames
 
@@ -326,68 +348,112 @@ def edit
 end
 ```
 
-**Note:** When using the Action DSL with a Page class that has a `klass` attribute, BetterController handles Turbo Frame rendering automatically. The `render_in_frame` helper is provided for manual controller implementations.
+**Note:** When using the Action DSL, prefer the explicit `turbo_frame {}` handler for better control and clarity.
 
---------------------------------
+## Using with Action DSL
 
-## Action DSL Integration
-
-### turbo_stream in on_success
+The Action DSL integrates Turbo Frames and Streams seamlessly:
 
 ```ruby
-on_success do
-  turbo_stream do
-    prepend :users_list, component: UserRowComponent
-    update :users_count, partial: 'users/count'
-    flash type: :notice, message: 'User created!'
+action :create do
+  service Users::CreateService
+
+  on_success do
+    html { redirect_to users_path }
+
+    turbo_frame do
+      component UserRowComponent
+    end
+
+    turbo_stream do
+      prepend :users_list, component: UserRowComponent
+      update :users_count, partial: 'users/count'
+      flash type: :notice, message: 'User created!'
+    end
+  end
+
+  on_error :validation do
+    html { render_page status: :unprocessable_entity }
+
+    turbo_frame do
+      partial 'users/form', locals: { errors: @result[:errors] }
+    end
+
+    turbo_stream do
+      replace :user_form, component: UserFormComponent
+      form_errors errors: @result[:errors]
+    end
   end
 end
 ```
 
---------------------------------
+## Stream Content Options
 
-### turbo_stream in on_error
+Each stream builder accepts these content options:
 
-```ruby
-on_error :validation do
-  turbo_stream do
-    replace :user_form, component: UserFormComponent
-    form_errors errors: @result[:errors]
-  end
-end
-```
-
---------------------------------
-
-## Target Resolution
-
-### Target types
+| Option | Description |
+|--------|-------------|
+| `partial:` | Render a partial |
+| `component:` | Render a ViewComponent |
+| `html:` | Raw HTML string |
+| `locals:` | Local variables for partial/component |
 
 ```ruby
-# String/Symbol - used as-is
-stream_replace(:users_list, ...)
-stream_replace('user_form', ...)
-
-# ActiveRecord - uses dom_id
-stream_replace(@user, ...)  # => "user_123"
-stream_remove(@comment)      # => "comment_456"
-```
-
---------------------------------
-
-## Content Options
-
-### partial, component, html
-
-```ruby
-# Partial
+# Using partial
 stream_replace(:user, partial: 'users/user', locals: { user: @user })
 
-# Component
+# Using component
 stream_replace(:user, component: UserCardComponent)
 
-# HTML
+# Using raw HTML
 stream_update(:counter, html: "<span>#{@count}</span>")
 ```
 
---------------------------------
+## Target Resolution
+
+Targets can be:
+
+```ruby
+# String or Symbol - used as-is
+stream_replace(:users_list, ...)
+stream_replace('user_form', ...)
+
+# ActiveRecord model - uses dom_id
+stream_replace(@user, ...)  # => target: "user_123"
+stream_remove(@comment)      # => target: "comment_456"
+```
+
+## Configuration
+
+Configure Turbo settings in the initializer:
+
+```ruby
+BetterController.configure do |config|
+  config.turbo_enabled = true
+  config.turbo_default_frame = nil
+  config.turbo_auto_flash = true
+  config.turbo_auto_form_errors = true
+end
+```
+
+## Required Partials
+
+Ensure these partials exist for flash and form errors:
+
+```erb
+<%# app/views/shared/_flash.html.erb %>
+<% flash.each do |type, message| %>
+  <div class="flash flash-<%= type %>"><%= message %></div>
+<% end %>
+
+<%# app/views/shared/_form_errors.html.erb %>
+<% if errors.any? %>
+  <div class="form-errors">
+    <ul>
+      <% errors.full_messages.each do |message| %>
+        <li><%= message %></li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
+```

@@ -271,7 +271,20 @@ on_success do
 end
 ```
 
-**Note:** For Turbo Frame requests, if `@page_config` has a `klass` attribute (ViewComponent class), BetterController automatically renders the component with `layout: false`. For normal HTML requests, it uses Rails standard render (looks for .html.erb view).
+### Turbo Frame Handler
+
+For explicit control over Turbo Frame requests, use the `turbo_frame {}` handler:
+
+```ruby
+on_success do
+  html { render_page }  # Normal HTML requests
+  turbo_frame do        # Turbo Frame requests
+    component Users::ListComponent, locals: { title: 'Users' }
+  end
+end
+```
+
+See [Turbo Frame DSL](#turbo-frame-builder) below for full documentation.
 
 ## Error Handlers
 
@@ -312,6 +325,68 @@ end
 | `:not_found` | `ActiveRecord::RecordNotFound` |
 | `:authorization` | `Pundit::NotAuthorizedError`, `CanCan::AccessDenied` |
 | `:any` | Any other error (catch-all) |
+
+## Turbo Frame Builder
+
+The `turbo_frame {}` handler provides explicit control over Turbo Frame requests:
+
+```ruby
+on_success do
+  html { render_page }
+
+  turbo_frame do
+    component Users::ListComponent, locals: { title: 'Users' }
+  end
+end
+
+on_error :validation do
+  html { render_page status: :unprocessable_entity }
+
+  turbo_frame do
+    partial 'users/form', locals: { errors: @result[:errors] }
+  end
+end
+```
+
+### Turbo Frame Builder Options
+
+| Method | Description |
+|--------|-------------|
+| `component(klass, locals: {})` | Render a ViewComponent |
+| `partial(path, locals: {})` | Render a partial |
+| `render_page(status: :ok)` | Render using page config |
+| `layout(true/false)` | Control layout rendering (default: false) |
+
+### Examples
+
+```ruby
+# Render ViewComponent
+turbo_frame do
+  component Users::CardComponent, locals: { user: @user }
+end
+
+# Render partial
+turbo_frame do
+  partial 'users/card', locals: { user: @user }
+end
+
+# Render page config
+turbo_frame do
+  render_page status: :ok
+end
+
+# With explicit layout
+turbo_frame do
+  component Users::ListComponent
+  layout true  # Include layout in response
+end
+```
+
+### Fallback Behavior
+
+When a Turbo Frame request is received but no `turbo_frame {}` handler is defined, BetterController falls back to the `html {}` handler. This follows Rails standard behavior.
+
+---
 
 ## Turbo Stream Builder
 
@@ -380,9 +455,13 @@ class UsersController < ApplicationController
 
   action :index do
     service Users::IndexService
+    page Users::IndexPage
 
     on_success do
       html { render_page }
+      turbo_frame do
+        component Users::ListComponent, locals: { title: 'Users' }
+      end
       turbo_stream { replace :users_list, component: UsersListComponent }
       json { render json: @result }
       csv { send_csv @result[:collection], filename: 'users.csv' }
@@ -398,6 +477,9 @@ class UsersController < ApplicationController
 
     on_success do
       html { redirect_to users_path, notice: 'User created!' }
+      turbo_frame do
+        component UserRowComponent
+      end
       turbo_stream do
         prepend :users_list, component: UserRowComponent
         update :users_count, partial: 'users/count'
@@ -408,6 +490,9 @@ class UsersController < ApplicationController
 
     on_error :validation do
       html { render_page status: :unprocessable_entity }
+      turbo_frame do
+        partial 'users/form', locals: { errors: @result[:errors] }
+      end
       turbo_stream do
         replace :user_form, component: UserFormComponent
         form_errors errors: @result[:errors]

@@ -21,8 +21,6 @@ end
 
 ## Basic Syntax
 
-### Define an Action
-
 ```ruby
 action :action_name do
   # Configuration goes here
@@ -30,8 +28,6 @@ end
 ```
 
 This automatically defines the instance method `action_name` on your controller.
-
---------------------------------
 
 ## Service Configuration
 
@@ -43,27 +39,41 @@ Call a service class:
 action :create do
   service Users::CreateService
 end
-```
 
---------------------------------
-
-### service with method
-
-Specify custom method:
-
-```ruby
+# With custom method
 action :create do
   service Users::CreateService, method: :perform
 end
 ```
 
---------------------------------
+Services can follow multiple patterns:
 
-## Page and Component
+```ruby
+# Class method style
+class Users::CreateService
+  def self.call(params:, id: nil)
+    # ...
+  end
+end
+
+# Instance method style (receives current_user if available)
+class Users::CreateService
+  def initialize(user, params:)
+    @user = user
+    @params = params
+  end
+
+  def call
+    # ...
+  end
+end
+```
+
+## Page and Component Configuration
 
 ### page
 
-Define Page class for UI configuration:
+Define a Page class for UI configuration. The page receives data from the service result and generates page configuration.
 
 ```ruby
 action :show do
@@ -72,44 +82,107 @@ action :show do
 end
 ```
 
-The page class receives data and current_user:
+The page class is instantiated with service result data and current_user:
 
 ```ruby
 # Signature: Page.new(data, user: current_user).action_name
 ```
 
---------------------------------
+#### Page Return Types
+
+Pages can return different types, all automatically normalized:
+
+**1. Return Hash (simplest - automatically wrapped)**
+
+```ruby
+class Users::IndexPage
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def index
+    { header: { title: 'Users' }, table: { items: @data } }
+  end
+end
+# Result: Hash is wrapped in BetterController::Config
+```
+
+**2. Return BetterController::Config (standalone with meta)**
+
+```ruby
+class Users::ShowPage
+  def initialize(data, user: nil)
+    @data = data
+  end
+
+  def show
+    BetterController::Config.new(
+      { header: { title: @data.name }, details: { resource: @data } },
+      meta: { page_type: :show, editable: @data.editable? }
+    )
+  end
+end
+# Result: BetterController::Config returned as-is
+```
+
+**3. Return BetterPage::Config (with BetterPage gem)**
+
+```ruby
+class Users::ShowPage < BetterPage::Base
+  def initialize(data, user: nil)
+    @data = data
+    @user = user
+  end
+
+  def show
+    BetterPage::Config.new(
+      { header: { title: @data.name }, details: { resource: @data } },
+      meta: { page_type: :show }
+    )
+  end
+end
+# Result: BetterPage::Config returned as-is (requires page_config_class configuration)
+```
+
+#### Normalization Behavior
+
+| Page Returns | @page_config Result |
+|--------------|---------------------|
+| `Hash` | `BetterController::Config.new(hash)` |
+| `BetterController::Config` | Returned as-is |
+| `BetterPage::Config` (if configured) | Returned as-is |
+| `nil` | `nil` |
+
+**Note:** Services handle business logic and return data. Pages handle UI configuration. These are separate concerns.
 
 ### component
 
-Render ViewComponent directly:
+Render a ViewComponent directly:
 
 ```ruby
 action :index do
   component Users::ListComponent
 end
 
+# With locals
 action :index do
-  component Users::ListComponent, locals: { title: 'Users' }
+  component Users::ListComponent, locals: { title: 'All Users' }
 end
 ```
 
---------------------------------
-
-## Parameters
+## Parameter Configuration
 
 ### params_key
 
-Set root key for strong parameters:
+Set the root key for strong parameters:
 
 ```ruby
 action :create do
-  params_key :user  # Uses params[:user]
   service Users::CreateService
+  params_key :user  # Uses params[:user]
 end
 ```
-
---------------------------------
 
 ### permit
 
@@ -117,9 +190,9 @@ Define permitted parameters:
 
 ```ruby
 action :create do
+  service Users::CreateService
   params_key :user
   permit :name, :email, :password
-  service Users::CreateService
 end
 
 # Nested parameters
@@ -128,13 +201,11 @@ action :create do
 end
 ```
 
---------------------------------
-
 ## Callbacks
 
 ### before
 
-Execute before service:
+Execute code before the service:
 
 ```ruby
 action :update do
@@ -143,24 +214,22 @@ action :update do
 end
 ```
 
---------------------------------
-
 ### after
 
-Execute after service:
+Execute code after the service:
 
 ```ruby
 action :create do
   service Users::CreateService
-  after { |result| track_event('user_created') }
+  after { |result| track_event('user_created', result) }
 end
 ```
 
---------------------------------
-
 ## Success Handlers
 
-### on_success with format handlers
+### on_success
+
+Define response handlers for successful actions:
 
 ```ruby
 action :create do
@@ -170,49 +239,58 @@ action :create do
     html { redirect_to users_path }
     turbo_stream { prepend :users_list, component: UserRowComponent }
     json { render json: @result }
-    csv { send_csv @result[:collection] }
   end
 end
 ```
 
---------------------------------
+### Format Handlers
 
-### redirect_to
+Inside `on_success`, you can define format-specific handlers:
 
 ```ruby
 on_success do
   html { redirect_to users_path, notice: 'Created!' }
+  turbo_stream do
+    append :users, partial: 'users/user'
+    update :flash, partial: 'shared/flash'
+  end
+  json { render json: build_json_response(@result) }
+  csv { send_csv @result[:collection] }
+  xml { render xml: @result[:resource] }
 end
 ```
 
---------------------------------
-
-### render_page
+### HTML Response Helpers
 
 ```ruby
 on_success do
+  html { redirect_to users_path }
   html { render_page }  # Uses page config from Page class
   html { render_page status: :created }
-end
-```
-
-**Note:** For Turbo Frame requests, if `@page_config` has a `klass` attribute (ViewComponent class), BetterController automatically renders the component with `layout: false`. For normal HTML requests, it uses Rails standard render (looks for .html.erb view).
-
---------------------------------
-
-### render_component
-
-```ruby
-on_success do
   html { render_component UserComponent, locals: { user: @result[:resource] } }
 end
 ```
 
---------------------------------
+### Turbo Frame Handler
+
+For explicit control over Turbo Frame requests, use the `turbo_frame {}` handler:
+
+```ruby
+on_success do
+  html { render_page }  # Normal HTML requests
+  turbo_frame do        # Turbo Frame requests
+    component Users::ListComponent, locals: { title: 'Users' }
+  end
+end
+```
+
+See [Turbo Frame DSL](#turbo-frame-builder) below for full documentation.
 
 ## Error Handlers
 
-### on_error with type
+### on_error
+
+Handle specific error types:
 
 ```ruby
 action :create do
@@ -248,23 +326,87 @@ end
 | `:authorization` | `Pundit::NotAuthorizedError`, `CanCan::AccessDenied` |
 | `:any` | Any other error (catch-all) |
 
---------------------------------
+## Turbo Frame Builder
+
+The `turbo_frame {}` handler provides explicit control over Turbo Frame requests:
+
+```ruby
+on_success do
+  html { render_page }
+
+  turbo_frame do
+    component Users::ListComponent, locals: { title: 'Users' }
+  end
+end
+
+on_error :validation do
+  html { render_page status: :unprocessable_entity }
+
+  turbo_frame do
+    partial 'users/form', locals: { errors: @result[:errors] }
+  end
+end
+```
+
+### Turbo Frame Builder Options
+
+| Method | Description |
+|--------|-------------|
+| `component(klass, locals: {})` | Render a ViewComponent |
+| `partial(path, locals: {})` | Render a partial |
+| `render_page(status: :ok)` | Render using page config |
+| `layout(true/false)` | Control layout rendering (default: false) |
+
+### Examples
+
+```ruby
+# Render ViewComponent
+turbo_frame do
+  component Users::CardComponent, locals: { user: @user }
+end
+
+# Render partial
+turbo_frame do
+  partial 'users/card', locals: { user: @user }
+end
+
+# Render page config
+turbo_frame do
+  render_page status: :ok
+end
+
+# With explicit layout
+turbo_frame do
+  component Users::ListComponent
+  layout true  # Include layout in response
+end
+```
+
+### Fallback Behavior
+
+When a Turbo Frame request is received but no `turbo_frame {}` handler is defined, BetterController falls back to the `html {}` handler. This follows Rails standard behavior.
+
+---
 
 ## Turbo Stream Builder
 
-### Stream actions in on_success
+Build multiple streams in the turbo_stream handler:
 
 ```ruby
 on_success do
   turbo_stream do
     append :users_list, component: UserRowComponent
-    prepend :notifications, partial: 'notification'
-    replace :user_1, partial: 'users/user'
-    update :counter, html: '<span>42</span>'
+    update :count, partial: 'users/count'
     remove :empty_state
-    flash type: :notice, message: 'Success!'
+    flash type: :notice, message: 'User created!'
+  end
+end
+
+on_error :validation do
+  turbo_stream do
+    replace :user_form, component: UserFormComponent
     form_errors errors: @result[:errors]
-    refresh  # Turbo 8+
+    flash type: :alert, message: 'Please fix errors'
   end
 end
 ```
@@ -284,11 +426,7 @@ end
 | `form_errors(errors:, target:)` | Update form errors |
 | `refresh` | Refresh the page (Turbo 8+) |
 
---------------------------------
-
 ## Authentication/Authorization Skip
-
-### skip_authentication, skip_authorization
 
 ```ruby
 action :index do
@@ -298,24 +436,18 @@ action :index do
 end
 ```
 
---------------------------------
-
 ## Instance Variables
 
-### Available after execution
+After action execution, these instance variables are available:
 
 | Variable | Description |
 |----------|-------------|
 | `@result` | Service result (unwrapped if using wrapped responses) |
 | `@error` | Exception if service failed |
 | `@error_type` | Classified error type (`:validation`, `:not_found`, etc.) |
-| `@page_config` | Page configuration (`BetterController::Config` or `BetterPage::Config`) |
-
---------------------------------
+| `@page_config` | Page configuration for rendering (`BetterController::Config` or `BetterPage::Config`) |
 
 ## Complete Example
-
-### Full Action Definition
 
 ```ruby
 class UsersController < ApplicationController
@@ -323,9 +455,13 @@ class UsersController < ApplicationController
 
   action :index do
     service Users::IndexService
+    page Users::IndexPage
 
     on_success do
       html { render_page }
+      turbo_frame do
+        component Users::ListComponent, locals: { title: 'Users' }
+      end
       turbo_stream { replace :users_list, component: UsersListComponent }
       json { render json: @result }
       csv { send_csv @result[:collection], filename: 'users.csv' }
@@ -341,6 +477,9 @@ class UsersController < ApplicationController
 
     on_success do
       html { redirect_to users_path, notice: 'User created!' }
+      turbo_frame do
+        component UserRowComponent
+      end
       turbo_stream do
         prepend :users_list, component: UserRowComponent
         update :users_count, partial: 'users/count'
@@ -351,6 +490,9 @@ class UsersController < ApplicationController
 
     on_error :validation do
       html { render_page status: :unprocessable_entity }
+      turbo_frame do
+        partial 'users/form', locals: { errors: @result[:errors] }
+      end
       turbo_stream do
         replace :user_form, component: UserFormComponent
         form_errors errors: @result[:errors]
@@ -372,5 +514,3 @@ class UsersController < ApplicationController
   end
 end
 ```
-
---------------------------------

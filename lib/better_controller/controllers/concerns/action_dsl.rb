@@ -396,8 +396,12 @@ module BetterController
         # Uses turbo-rails helper if available, otherwise checks Turbo-Frame header
         # @return [Boolean] true if Turbo Frame request
         def is_turbo_frame_request?
+          return false unless respond_to?(:request, true) && request.present?
+
           # Check for Turbo-Frame header (standard Turbo behavior)
           request.headers['Turbo-Frame'].present?
+        rescue StandardError
+          false
         end
 
         # Handle Turbo Stream success response
